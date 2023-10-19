@@ -44,6 +44,7 @@ experiments/**/bak/*
 experiments/**/res_bk*/*
 experiments/**/res_bak*/*
 **/*.png
+!asset/*.png
 experiments/data/
 
 # -- others --

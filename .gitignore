@@ -1,0 +1,50 @@
+# -- hidden folders --
+.*
+!.gitignore
+
+# -- output files --
+**/*.out
+outputs/
+
+# -- python --
+**/__pycache__/
+
+# -- R --
+.Rproj.user
+**/*.Rproj
+**/renv/*
+!**/renv/activate.R
+!**/renv.lock
+!**/.Rprofile
+
+# -- dataset (track the script of downloading and preprocessing) --
+**/*.sqlite
+**/*.mmod
+**/*.h5ad
+**/*.h5
+**/*.bed
+**/*.rds
+**/*.RDS
+**/*.gz
+**/*.npz
+**/*.csv
+data/**/res/*
+data/**/figs*/*
+data/**/fig/*
+data/**/raw/*
+data/**/call_peaks_res/*
+data/**/*.tbi
+
+# -- experiments --
+experiments/**/*.ipynb
+experiments/**/res/*
+experiments/**/fig/*
+experiments/**/fig*/*
+experiments/**/bak/*
+experiments/**/res_bk*/*
+experiments/**/res_bak*/*
+**/*.png
+experiments/data/
+
+# -- others --
+**/StabMap/

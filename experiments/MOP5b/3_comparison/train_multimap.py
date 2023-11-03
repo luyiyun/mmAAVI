@@ -112,18 +112,3 @@ for seedi in range(6):
         K=30,
         seed=seedi,
     )
-# data_fns = [
-#     osp.join(data_dir, fn)
-#     for fn in os.listdir(data_dir)
-#     if re.search(r"pbmc_graph_feats_[0-9]*?_[0-9].mmod", fn)
-# ]
-# for i, data_fni in enumerate(data_fns):
-#     res_fn = osp.join(res_dir, "%s.csv" % osp.basename(data_fni)[:-5])
-#     print("%d/%d %s" % (i+1, len(data_fns), res_fn))
-#     run(
-#         data_fn=data_fni,
-#         res_fn=res_fn,
-#         use_pseduo=True,
-#         K=30,
-#         seed=0,
-#     )

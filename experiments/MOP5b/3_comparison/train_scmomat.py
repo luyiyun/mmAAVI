@@ -102,17 +102,6 @@ def run(
     z = np.concatenate(zs)
     pd.DataFrame(z).to_csv(res_fn)
 
-    # post_pair_dist_fn = osp.join(res_dir, f"post_{cfg.K}_{cfg.T}_pair_dist.npy")
-    # post_knn_indices_fn = osp.join(res_dir, f"post_{cfg.K}_{cfg.T}_knn_indices.npy")
-    # post_knn_dists_fn = osp.join(res_dir, f"post_{cfg.K}_{cfg.T}_knn_dists.npy")
-    # logging.info("  post process.")
-    # s_pair_dist, knn_indices, knn_dists = scmomat.post_process(
-    #     zs, cfg.n_neighbors, njobs=cfg.njobs, r=cfg.r, return_sparse_dist=True
-    # )
-    # np.save(post_pair_dist_fn, s_pair_dist)
-    # np.save(post_knn_indices_fn, knn_indices)
-    # np.save(post_knn_dists_fn, knn_dists)
-
 
 # 1. 设置路径
 data_dir = "../res/1_pp/"
@@ -132,19 +121,3 @@ for seedi in range(6):
         seed=seedi,
         device="cuda:0",
     )
-# data_fns = [
-#     osp.join(data_dir, fn)
-#     for fn in os.listdir(data_dir)
-#     if re.search(r"pbmc_graph_feats_[0-9]*?_[0-9].mmod", fn)
-# ]
-# for i, data_fni in enumerate(data_fns):
-#     res_fn = osp.join(res_dir, "%s.csv" % osp.basename(data_fni)[:-5])
-#     print("%d/%d %s" % (i+1, len(data_fns), res_fn))
-#     run(
-#         data_fn=data_fni,
-#         res_fn=res_fn,
-#         use_pseduo=True,
-#         K=30,
-#         seed=0,
-#         device="cuda:0",
-#     )

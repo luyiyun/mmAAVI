@@ -36,7 +36,7 @@ A deep generative model that addresses the mosaic integration challenges.
    mamba env create -f ./environments/env_mmAAVI_hist.yaml
    ```
 
-2. Add the source code of mmAAVI into the seach paths.
+2. Add the source code of mmAAVI into the seach paths and import the used functions.
 
    ```python
    import sys
@@ -102,6 +102,6 @@ A deep generative model that addresses the mosaic integration challenges.
 
 ## Todo in the future
 
-- [] Package.
-- [] Separate the code that creates mosaic dataset.
-- [] Create clear documents.
+- [ ] Package.
+- [ ] Separate the code that creates mosaic dataset.
+- [ ] Create clear documents.

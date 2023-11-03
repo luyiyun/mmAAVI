@@ -38,15 +38,63 @@ A deep generative model that addresses the mosaic integration challenges.
 
 2. Add the source code of mmAAVI into the seach paths.
 
-```
+   ```python
+   import sys
 
-```
+   sys.path.append("src")
+   from mmAAVI.dataset import MosaicData
+   from mmAAVI.model import MMAAVI
+   from mmAAVI.utils import save_json, setup_seed
+   ```
 
 3. Create the mosaic dataset and train mmAAVI model with it.
 
+   ```python
+   dat = D.MosaicData(
+       [("batch1", "atac", arr1), ("batch2", "rna", arr2), ("batch3", "protein", arr3)],
+       obs=obs_dataframe,
+       var=var_dataframe,
+       nets={"window": [("atac", "rna", atac_rna), ("rna", "protein", rna_protein)]}
+   )
+
+   setup_seed(123, deterministic=True) # set random seed
+
+   tr_dat, va_dat = dat.split(0.1, strat_meta=None)
+   tr_loader, in_dims, out_dims = MMAAVI.configure_data_to_loader(
+       tr_dat, drop_last=True, shuffle=True, num_workers=4, net_use="window",
+   )
+   va_loader, _, _ = MMAAVI.configure_data_to_loader(
+       va_dat, drop_last=False, shuffle=False, num_workers=4, net_use="window",
+   )
+
+   # construct model
+   model = MMAAVI.att_gmm_enc_model(
+       nbatches=dat.nbatch, dim_inputs=in_dims, dim_outputs=out_dims,
+       nclusters=nclusters
+   )
+
+   hist_dfs, best_score = model.fit(tr_loader, va_loader, device="cuda:0")
+   ```
+
 4. Get the cell embeddings.
 
+   ```python
+   loader, _, _ = MMAAVI.configure_data_to_loader(
+       dat, drop_last=False, shuffle=False, num_workers=4, net_use="window",
+   )
+   embeds = model.encode(loader, device="cuda:0")
+   ```
+
 5. Make the feature Bayes factors.
+
+   ```python
+   de_res = model.differential(
+       dat,
+       obs_label=label_name,
+       used_net="window",
+       nsamples=10000,
+   )
+   ```
 
 ## Development
 

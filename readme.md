@@ -1,6 +1,6 @@
 # mmAAVI (Multi-omics Mosaic Auto-scaling Attention Variational Inference)
 
-A deep generative model that addresses the mosaic integration challenges.
+A deep generative model that addresses mosaic integration challenges.
 
 ![Figure 1](asset/Figure1-V4.png)
 
@@ -96,9 +96,13 @@ A deep generative model that addresses the mosaic integration challenges.
    )
    ```
 
-## Development
-
 ## Reproduce results
+
+1. Follow the first step of Usage.
+
+2. Run the scipts in `data` to download the benchmark datasets.
+
+3. Run the scipts in `experiments` to analysis the benchmark datasets.
 
 ## Todo in the future
 

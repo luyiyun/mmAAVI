@@ -21,17 +21,28 @@ A deep generative model that addresses the mosaic integration challenges.
 
 ## Usage
 
-1. Create a [conda enviroment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html).
+1. Create a [conda enviroment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) and install all dependencies.
 
-2. Install all dependencies.
+  ```bash
+  # use mamba (fast alternative of conda) commands
+  mamba create -n mmaavi -y
+  mamba activate mmaavi
+  bash ./environments/env_mmAAVI.sh
 
-3. Add the source code of mmAAVI into the seach paths.
+  # or use environment.yml file
+  mamba env create -f ./environments/env_mmAAVI.yaml
 
-4. Create the mosaic dataset and train mmAAVI model with it.
+  # or use environment.yml file across platform
+  mamba env create -f ./environments/env_mmAAVI_hist.yaml
+  ```
 
-5. Get the cell embeddings.
+2. Add the source code of mmAAVI into the seach paths.
 
-6. Make the feature Bayes factors.
+3. Create the mosaic dataset and train mmAAVI model with it.
+
+4. Get the cell embeddings.
+
+5. Make the feature Bayes factors.
 
 ## Development
 

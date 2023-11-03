@@ -1,4 +1,4 @@
-name: mosaic
+name: mmaavi
 channels:
   - defaults
   - conda-forge
@@ -47,4 +47,4 @@ dependencies:
   - pytorch-cluster
   - pytorch-sparse
   - pytorch-scatter
-prefix: /home/rongzhiwei/mambaforge/envs/mosaic
+prefix: /home/rongzhiwei/mambaforge/envs/mmaavi

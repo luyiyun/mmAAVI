@@ -16,5 +16,3 @@ for i in range(1, 5):
 
 for fi in files:
     os.system("wget -O %s %s" % (os.path.join(save_dir, fi), url_prefix + fi))
-
-# 其中的protein_alias需要自己处理得到

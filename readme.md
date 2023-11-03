@@ -106,6 +106,7 @@ A deep generative model that addresses mosaic integration challenges.
 
 ## Todo in the future
 
+- [ ] Organize codes in `experiments`.
 - [ ] Package.
 - [ ] Separate the code that creates mosaic dataset.
 - [ ] Create clear documents.

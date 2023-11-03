@@ -1,5 +1,4 @@
 # 1. 设置环境
-setwd("~/Documents/mosaic-GAN/experiments/PBMC/3_comparison")
 renv::activate(project = normalizePath("../../../environments/env_uinmf/"))
 
 # 2. 载入包和python函数
@@ -14,7 +13,7 @@ mmAAVI <- import_from_path("mmAAVI", normalizePath("../../../src/"))
 pp_one_omics <- function(count_lists, use_seurat_select, num_select_genes = 2000) {
   liger <- createLiger(count_lists, remove.missing = FALSE)
   liger <- normalize(liger)
-  
+
   if (use_seurat_select) {
     norms <- liger@norm.data
     norms <- purrr::reduce(norms, cbind)
@@ -24,14 +23,14 @@ pp_one_omics <- function(count_lists, use_seurat_select, num_select_genes = 2000
       nfeatures = num_select_genes
     )
     top2000 <- head(VariableFeatures(vars_2000), num_select_genes)
-    # top2000_feats <- norms[top2000,] 
+    # top2000_feats <- norms[top2000,]
     # liger <- selectGenes(liger)
     liger@var.genes <- top2000
   } else {
     liger <- selectGenes(liger, num.genes = num_select_genes)
   }
   liger <- scaleNotCenter(liger)
-  
+
   return(liger)
 }
 
@@ -40,7 +39,7 @@ run <- function(data_fn, res_fn, use_pseduo = TRUE, K = 30, seed = 0) {
   set.seed(seed)
   dat <- mmAAVI$dataset$MosaicData$load(data_fn)
   dat$sparse_array2matrix()  # 使用py将所有的sparse改为matrix格式，r可以直接识别
-  
+
   # net
   if (use_pseduo) {
     net <- dat$nets["window"]["atac", "rna"]
@@ -59,11 +58,11 @@ run <- function(data_fn, res_fn, use_pseduo = TRUE, K = 30, seed = 0) {
     }
     grid[[omic_name]] <- grid_i
   }
-  
+
   atac <- pp_one_omics(grid$atac, TRUE, 2000)
   rna <- pp_one_omics(grid$rna, TRUE, 2000)
   protein <- pp_one_omics(grid$protein, FALSE, NULL)
-  
+
   # 将顺序重新排列一下!
   for (namei in names(rna@scale.data)) {
     protein@scale.unshared.data[[namei]] <- t(rna@scale.data[[namei]])
@@ -73,7 +72,7 @@ run <- function(data_fn, res_fn, use_pseduo = TRUE, K = 30, seed = 0) {
     protein@scale.unshared.data[[namei]] <- t(atac@scale.data[[namei]])
     protein@var.unshared.features[[namei]] <- colnames(atac@scale.data[[namei]])
   }
-  
+
   res_liger <- optimizeALS(
     protein, k=K, use.unshared = TRUE,
     max.iters = 30, thresh = 1e-10, rand.seed = seed
@@ -83,36 +82,29 @@ run <- function(data_fn, res_fn, use_pseduo = TRUE, K = 30, seed = 0) {
   write.csv(H, file = res_fn)
 }
 
-
-
 # 3. 读入数据
 data_dir <- normalizePath("../res/1_pp/")
 res_dir <- normalizePath("../res/3_comparison/uinmf/")
 if (!dir.exists(res_dir)) { dir.create(res_dir) }
 
-# # seed不会对结果产生影响
-# data_fn <- file.path(data_dir, "pbmc_graph_feats.mmod")
-# res_fn <- file.path(res_dir, "pbmc_graph_feats_all_0.csv")
-# run(data_fn, res_fn, use_pseduo = TRUE, K = 30, seed = 0)
 for (seedi in 0:5) {
-  data_fn <- file.path(data_dir, "pbmc_graph_feats.mmod")
-  res_fn <- file.path(res_dir, paste0("pbmc_graph_feats_all_", seedi, ".csv"))
+  data_fn <- file.path(data_dir, "pbmc.mmod")
+  res_fn <- file.path(res_dir, paste0("pbmc_", seedi, ".csv"))
   print(res_fn)
   run(data_fn, res_fn, use_pseduo = TRUE, K = 30, seed = seedi)
 }
 
-# 虽然seed不会对模型没有影响，但是会影响subsample出来的数据集
-data_fns <- c()
-for (data_fn in list.files(data_dir)) {
-  if (grepl("pbmc_graph_feats_[0-9]*?_[0-9].mmod", data_fn)) {
-    data_fns <- c(data_fns, data_fn)
-  }
-}
-for (i in seq_along(data_fns)) {
-  data_fn <- data_fns[i]
-  data_fn_full <- file.path(data_dir, data_fn)
-  res_fn <- file.path(res_dir, paste0(substr(data_fn, 0, nchar(data_fn)-4), "csv"))
-  print(paste0(i, "/", length(data_fns), ", ", res_fn))
-  
-  run(data_fn_full, res_fn, use_pseduo = TRUE, K = 30, seed = 0)
-}
+# data_fns <- c()
+# for (data_fn in list.files(data_dir)) {
+#   if (grepl("pbmc_[0-9]*?_[0-9].mmod", data_fn)) {
+#     data_fns <- c(data_fns, data_fn)
+#   }
+# }
+# for (i in seq_along(data_fns)) {
+#   data_fn <- data_fns[i]
+#   data_fn_full <- file.path(data_dir, data_fn)
+#   res_fn <- file.path(res_dir, paste0(substr(data_fn, 0, nchar(data_fn)-4), "csv"))
+#   print(paste0(i, "/", length(data_fns), ", ", res_fn))
+#
+#   run(data_fn_full, res_fn, use_pseduo = TRUE, K = 30, seed = 0)
+# }

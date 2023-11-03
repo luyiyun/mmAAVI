@@ -2,7 +2,7 @@ import logging
 import os
 import os.path as osp
 import time
-import re
+# import re
 from typing import Optional
 
 import anndata
@@ -100,8 +100,8 @@ os.makedirs(res_dir, exist_ok=True)
 
 # 2. run
 for seedi in range(6):
-    data_fn = osp.join(data_dir, "pbmc_graph_feats.mmod")
-    res_fn = osp.join(res_dir, "pbmc_graph_feats_all_%d.csv" % seedi)
+    data_fn = osp.join(data_dir, "pbmc.mmod")
+    res_fn = osp.join(res_dir, "pbmc_%d.csv" % seedi)
     print(res_fn)
     run(
         data_fn=data_fn,
@@ -110,18 +110,20 @@ for seedi in range(6):
         K=30,
         seed=seedi,
     )
-data_fns = [
-    osp.join(data_dir, fn)
-    for fn in os.listdir(data_dir)
-    if re.search(r"pbmc_graph_feats_[0-9]*?_[0-9].mmod", fn)
-]
-for i, data_fni in enumerate(data_fns):
-    res_fn = osp.join(res_dir, "%s.csv" % osp.basename(data_fni)[:-5])
-    print("%d/%d %s" % (i+1, len(data_fns), res_fn))
-    run(
-        data_fn=data_fni,
-        res_fn=res_fn,
-        use_pseduo=True,
-        K=30,
-        seed=0,
-    )
+
+# for subsampling experiments
+# data_fns = [
+#     osp.join(data_dir, fn)
+#     for fn in os.listdir(data_dir)
+#     if re.search(r"pbmc_[0-9]*?_[0-9].mmod", fn)
+# ]
+# for i, data_fni in enumerate(data_fns):
+#     res_fn = osp.join(res_dir, "%s.csv" % osp.basename(data_fni)[:-5])
+#     print("%d/%d %s" % (i+1, len(data_fns), res_fn))
+#     run(
+#         data_fn=data_fni,
+#         res_fn=res_fn,
+#         use_pseduo=True,
+#         K=30,
+#         seed=0,
+#     )

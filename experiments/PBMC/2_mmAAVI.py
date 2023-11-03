@@ -128,7 +128,7 @@ for nc in [8]:  # range(3, 11):
 # data_fns = [
 #     osp.join(data_dir, fn)
 #     for fn in os.listdir(data_dir)
-#     if re.search(r"pbmc_graph_feats_[0-9]*?_[0-9].mmod", fn)
+#     if re.search(r"pbmc_[0-9]*?_[0-9].mmod", fn)
 # ]
 # for i, data_fni in enumerate(data_fns):
 #     # res_fn = osp.join(res_dir, "%s.csv" % osp.basename(data_fni)[:-5])

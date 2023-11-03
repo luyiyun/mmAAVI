@@ -15,6 +15,7 @@
 
 # %%
 import sys
+# import warnings
 import os
 import os.path as osp
 
@@ -23,28 +24,30 @@ import pandas as pd
 import anndata as ad
 import scanpy as sc
 from scipy import sparse as sp
-from tqdm import tqdm
+
+# %matplotlib inline
 
 # %%
 sys.path.append(osp.abspath("../../src"))
 from mmAAVI import dataset as D
 
 # %%
-root = "../../data/PBMC/raw"
+root = "../../data/MOP5b/raw"
 res_dir = "./res/1_pp/"
 
 # %%
 os.makedirs(res_dir, exist_ok=True)
 
 # %% [markdown]
-# # Create the mosaic dataset
+# # 读取数据创建数据集
 
 # %%
-counts_prefix = {"atac": "RxC", "rna": "GxC", "protein": "PxC"}
-batch_names = [str(i) for i in range(1, 5)]
+counts_prefix = {"atac": "RxC", "rna": "GxC"}
+# var_names = {"atac": "regions.txt", "rna": "genes.txt"}
+batch_names = [str(i) for i in range(1, 6)]
 
 # %% [markdown]
-# ## variables
+# ## var
 
 # %%
 # atac
@@ -78,59 +81,24 @@ var_rna = dfi
 var_rna.head()
 
 # %%
-# protein
-fn = osp.join(root, "proteins_alias.txt")
-names = np.loadtxt(fn, dtype="U")
-names_ori = [line[0] for line in names]
-names_alias = [",".join(line) for line in names]
-var_protein = pd.DataFrame(dict(alias=names_alias), index=names_ori)
-var_protein.head()
-
-# %%
-var = pd.concat([var_atac[[]], var_rna[[]], var_protein[[]]])
-var.tail()
+var = pd.concat([var_atac[[]], var_rna[[]]])
 
 # %% [markdown]
-# ## graph
+# ## net:window
 
 # %%
-# atac-rna
-
 bed_rna = D.Bed(var_rna)
 bed_atac = D.Bed(var_atac)
 
 atac_rna = bed_atac.window_graph(
     bed_rna.expand(upstream=2e3, downstream=0),
-    window_size=0, use_chrom=[str(i) for i in range(1, 23)] + ["X","Y"]
+    window_size=0, use_chrom=[str(i) for i in range(1, 23)] + ["X", "Y"]
 )
 print(atac_rna.shape, atac_rna.nnz)
 
-# %%
-# rna-protein
-row, col = [], []
-for i, p_alias in tqdm(enumerate(var_protein["alias"]), total=var_protein.shape[0]):
-    for j, g_symbol in enumerate(var_rna.index):
-        if (g_symbol in p_alias) or (g_symbol.lower() in p_alias.lower()):
-            row.append(j)
-            col.append(i)
-row, col = np.array(row), np.array(col)
-rna_protein = sp.coo_array((np.ones_like(row), (row, col)), shape=(var_rna.shape[0], var_protein.shape[0]))
-print(rna_protein.shape)
-print(rna_protein.nnz)
-
-# %%
-# only remain the features which are in the network
-mask_atac = (atac_rna.todense() > 0.).any(axis=1)
-mask_rna = (atac_rna.todense() > 0.).any(axis=0) | (rna_protein.todense() > 0.).any(axis=1)
-mask_protein = (rna_protein.todense() > 0.).any(axis=0)
-print(mask_atac.sum(), mask_rna.sum(), mask_protein.sum())
-
-var = pd.concat([var_atac.loc[mask_atac, []], var_rna.loc[mask_rna, []], var_protein.loc[mask_protein, []]])
-atac_rna = sp.coo_array(atac_rna.todense()[mask_atac, :][:, mask_rna])
-rna_protein = sp.coo_array(rna_protein.todense()[mask_rna, :][:, mask_protein])
 
 # %% [markdown]
-# ## expressions
+# ## X:counts
 
 # %%
 dats = []
@@ -139,25 +107,18 @@ for bi in batch_names:
         fn = osp.join(root, "%s%s.npz" % (oprf, bi))
         if osp.exists(fn):
             datai = sp.load_npz(fn).T
-            if oi == "protein":
-                datai = np.array(datai.todense())
-            else:
-                datai = sp.csr_array(datai)
-            feat_mask = {"atac": mask_atac, "rna": mask_rna, "protein": mask_protein}[oi]
-            datai = datai[:, feat_mask]
+            # 而对于这两种组学，使用稀疏矩阵更好（已测试）
+            datai = sp.csr_array(datai)
         else:
             datai = None
-        dats.append(("batch"+bi, oi, datai))
+        dats.append(("batch" + bi, oi, datai))
 mdat = D.MosaicData(
-    dats, var=var, nets={"window": [("atac", "rna", atac_rna), ("rna", "protein", rna_protein)]}
+    dats, var=var, nets={"window": [("atac", "rna", atac_rna)]}
 )
-
-# %%
 print(mdat)
 
-
 # %% [markdown]
-# ## representations
+# ## reps:log1p_norm
 
 # %%
 # 对data_grid进行预处理，使用这些数据作为输入
@@ -181,6 +142,9 @@ def log1p_norm(i, j, dati):
 mdat.reps["log1p_norm"] = mdat.X.apply(log1p_norm)
 
 
+# %% [markdown]
+# ## reps:lsi_pca
+
 # %%
 def lsi_pca(bi, oi, x):
     if x is None:
@@ -202,14 +166,15 @@ def lsi_pca(bi, oi, x):
 mdat.reps["lsi_pca"] = mdat.X.apply(lsi_pca)
 
 # %% [markdown]
-# ## observations
+# ## obs
 
 # %%
 obs = pd.concat([
     pd.read_csv(osp.join(root, "meta_c%s.csv" % bi), index_col=0)
     for bi in batch_names
 ])
-obs.rename(columns={"coarse_cluster": "cell_type", "cluster": "fine_cell_type"}, inplace=True)
+obs.rename(columns={"cluster (remapped)": "cell_type"}, inplace=True)
+obs = obs.loc[:, ["cell_type", "cluster", "region", "MajorCluster", "SubCluster"]]
 print(obs.shape)
 obs.head()
 
@@ -221,29 +186,13 @@ obs.head()
 
 # %%
 mdat.obs = obs
+# mdat.obs.head()
 
 # %% [markdown]
-# ## saving
+# ## 保存
 
 # %%
 print(mdat)
 
 # %%
-mdat.save(osp.join(res_dir, "pbmc.mmod"))
-
-# %% [markdown]
-# # Subsample dataset
-
-# %%
-mdat = D.MosaicData.load(osp.join(res_dir, "pbmc.mmod"))
-print(mdat)
-
-# %%
-subsample_sizes = np.arange(0.9, 0.0, -0.1)
-seeds = list(range(6))
-
-# %%
-for subsize in subsample_sizes:
-    for seedi in seeds:
-        _, dat_used = mdat.split(subsize, seed=seedi)
-        dat_used.save(osp.join(res_dir, "pbmc_%d_%d.mmod" % (dat_used.nobs, seedi)))
+mdat.save(osp.join(res_dir, "mop5b_full.mmod"))

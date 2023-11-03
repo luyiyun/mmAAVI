@@ -61,35 +61,6 @@ compar_methods_name = {
 }
 
 
-# %% jupyter={"source_hidden": true}
-# 并行计算leiden_nmi和leiden_ari
-def _compute_clustering_leiden(connectivity_graph, resolution):
-    g = sc._utils.get_igraph_from_adjacency(connectivity_graph)
-    clustering = g.community_leiden(objective_function="modularity", weights="weight", resolution=resolution)
-    clusters = clustering.membership
-    return np.asarray(clusters)
-
-def nmi_ari(connectivity_graph, resolution, labels):
-    labels_pred = _compute_clustering_leiden(connectivity_graph, resolution)
-    nmi = M.normalized_mutual_info_score(labels, labels_pred)
-    ari = M.adjusted_rand_score(labels, labels_pred)
-    return nmi, ari
-
-def nmi_ari_by_reso(adata, keys, resolutions, n_neighbors=15, n_jobs=5, label_name="cell_type"):
-    res = []
-    for keyi in tqdm(keys):
-        sc.pp.neighbors(adata, use_rep=keyi, key_added=keyi, n_neighbors=n_neighbors)
-        out = Parallel(n_jobs=n_jobs)(
-            delayed(nmi_ari)(adata.obsp["%s_connectivities" % keyi], ri, adata.obs[label_name]) for ri in resolutions
-        )
-        res.extend([
-            {"method": keyi,"resolution": ri, "nmi": nmi_i, "ari": ari_i}
-            for (nmi_i, ari_i), ri in zip(out, resolutions)
-        ])
-    res = pd.DataFrame.from_records(res)
-    return res
-
-
 # %% [markdown]
 # # Load Dataset
 
@@ -121,7 +92,7 @@ for methodi in compar_methods:
     else:
         resi = osp.join("./res/3_comparison/", methodi)
         for fn in os.listdir(resi):
-            match = re.search(r"pbmc_graph_feats_all_([0-9]).csv", fn)
+            match = re.search(r"pbmc_([0-9]).csv", fn)
             if match:
                 seedi = int(match.group(1))
                 ffn = osp.join(resi, fn)
@@ -379,7 +350,7 @@ with warnings.catch_warnings(record=True):
         ax.set_yticks([])
         ax.set_xlabel("")
         ax.set_ylabel(methods_mapping[key])
-        
+
         if i == (n_methods - 1):
             handles, labels = ax.get_legend_handles_labels()
             ax.legend(handles, labels, loc="upper center", markerscale=markerscale, frameon=False, fancybox=False, ncols=4,
@@ -455,7 +426,7 @@ for i, (fn, ni, seedi, dat_fn) in enumerate(runs):
     embed = embed.detach().cpu().numpy()
     subdat = MosaicData.load(dat_fn).to_anndata(sparse=True)
     subdat.obsm["embed"] = embed
-    
+
     setup_seed(1234)
     bm = Benchmarker(
         subdat, batch_key="_batch", label_key=label_name, embedding_obsm_keys=["embed"],
@@ -465,7 +436,7 @@ for i, (fn, ni, seedi, dat_fn) in enumerate(runs):
         ), n_jobs=5
     )
     bm.benchmark()
-    
+
     res_df = bm.get_results(min_max_scale=False)
     res_df = res_df.T
     res_df = res_df["embed"].astype(float).to_frame().T
@@ -495,7 +466,7 @@ for i, (fn, ni, seedi, dat_fn) in enumerate(runs):
     embed = embed.detach().cpu().numpy()
     subdat = MosaicData.load(dat_fn).to_anndata(sparse=True)
     subdat.obsm["embed"] = embed
-    
+
     setup_seed(1234)
     bm = Benchmarker(
         subdat, batch_key="_batch", label_key=fine_label, embedding_obsm_keys=["embed"],
@@ -505,7 +476,7 @@ for i, (fn, ni, seedi, dat_fn) in enumerate(runs):
         ), n_jobs=5
     )
     bm.benchmark()
-    
+
     res_df = bm.get_results(min_max_scale=False)
     res_df = res_df.T
     res_df = res_df["embed"].astype(float).to_frame().T
@@ -552,7 +523,7 @@ for i, (methodi, res_fni, data_fni, ni, seedi) in enumerate(runs):
     embed = pd.read_csv(res_fni, index_col=0).values
     subdat = MosaicData.load(data_fni).to_anndata(sparse=True)
     subdat.obsm["embed"] = embed
-    
+
     setup_seed(1234)
     bm = Benchmarker(
         subdat, batch_key="_batch", label_key=label_name, embedding_obsm_keys=["embed"],
@@ -562,7 +533,7 @@ for i, (methodi, res_fni, data_fni, ni, seedi) in enumerate(runs):
         ), n_jobs=5
     )
     bm.benchmark()
-    
+
     res_df = bm.get_results(min_max_scale=False)
     res_df = res_df.T
     res_df = res_df["embed"].astype(float).to_frame().T
@@ -593,7 +564,7 @@ for i, (methodi, res_fni, data_fni, ni, seedi) in enumerate(runs):
     embed = pd.read_csv(res_fni, index_col=0).values
     subdat = MosaicData.load(data_fni).to_anndata(sparse=True)
     subdat.obsm["embed"] = embed
-    
+
     setup_seed(1234)
     bm = Benchmarker(
         subdat, batch_key="_batch", label_key=fine_label, embedding_obsm_keys=["embed"],
@@ -603,7 +574,7 @@ for i, (methodi, res_fni, data_fni, ni, seedi) in enumerate(runs):
         ), n_jobs=5
     )
     bm.benchmark()
-    
+
     res_df = bm.get_results(min_max_scale=False)
     res_df = res_df.T
     res_df = res_df["embed"].astype(float).to_frame().T

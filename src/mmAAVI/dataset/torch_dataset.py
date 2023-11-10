@@ -8,8 +8,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.utils.data as D
-from torch_geometric.utils import sort_edge_index
-from torch_geometric.utils.sparse import index2ptr
 
 from ..typehint import BATCH, SLICE, TUPLE_NET, T  # , NETS
 from .mosaic_data import MosaicData
@@ -134,8 +132,9 @@ class GraphDataLoader:
         p: float = 1.0,
         q: float = 1.0,
     ):
-        if net_style in ["sarr", "walk"]:
-            assert batch_size is not None
+        if net_style != "sarr":
+            raise NotImplementedError
+        assert batch_size is not None
         assert nets[0][0] == nets[0][1], "the dims of network must be equal"
 
         self._index = None
@@ -165,33 +164,34 @@ class GraphDataLoader:
         logging.info("network batch size is %d" % self.bs_int)
 
         if self.net_style == "walk":
-            self.walk_length = walk_length
-            self.context_size = context_size
-            self.walks_per_node = walks_per_node
-            self.num_negative_samples = num_negative_samples
-            self.p = p
-            self.q = q
-            self.random_walk_fn = torch.ops.torch_cluster.random_walk
-
-            if self.context_size is not None:
-                self.num_walks_per_rw = (
-                    1 + self.walk_length + 1 - self.context_size
-                )
-
-            edge_index = torch.tensor(
-                np.stack([nets[1], nets[2]], axis=0), dtype=torch.long
-            )
-            row, col = sort_edge_index(edge_index, num_nodes=self.vnum).cpu()
-            self.walk_need = index2ptr(row, self.vnum), col
-            self.net_sign = torch.tensor(self.nets[3]).float()
-
-            self.walk_loader = D.DataLoader(
-                range(self.vnum),
-                batch_size=self.bs_int,
-                shuffle=True,
-                num_workers=self.nw,
-                collate_fn=self.sample_rw,
-            )
+            pass
+            # self.walk_length = walk_length
+            # self.context_size = context_size
+            # self.walks_per_node = walks_per_node
+            # self.num_negative_samples = num_negative_samples
+            # self.p = p
+            # self.q = q
+            # self.random_walk_fn = torch.ops.torch_cluster.random_walk
+            #
+            # if self.context_size is not None:
+            #     self.num_walks_per_rw = (
+            #         1 + self.walk_length + 1 - self.context_size
+            #     )
+            #
+            # edge_index = torch.tensor(
+            #     np.stack([nets[1], nets[2]], axis=0), dtype=torch.long
+            # )
+            # row, col = sort_edge_index(edge_index, num_nodes=self.vnum).cpu()
+            # self.walk_need = index2ptr(row, self.vnum), col
+            # self.net_sign = torch.tensor(self.nets[3]).float()
+            #
+            # self.walk_loader = D.DataLoader(
+            #     range(self.vnum),
+            #     batch_size=self.bs_int,
+            #     shuffle=True,
+            #     num_workers=self.nw,
+            #     collate_fn=self.sample_rw,
+            # )
 
     def __iter__(self):
         if self.net_style == "walk":

@@ -1,65 +1,66 @@
-from typing import Union, Tuple, Optional
 from math import log
+from typing import Optional, Tuple, Union
 
-import torch
-import numpy as np
-import cupy as cp
-import pandas as pd
-import seaborn as sns
+# import seaborn as sns
 import igraph as ig
 import leidenalg
-# from torch.utils.data import Subset
-from sklearn.metrics import adjusted_rand_score  # , normalized_mutual_info_score
-from sklearn.neighbors import kneighbors_graph, NearestNeighbors
+import numpy as np
+# import cupy as cp
+import pandas as pd
+import torch
 # from sklearn.mixture import GaussianMixture
-from scipy.sparse import csr_matrix, csr_array
+from scipy.sparse import csr_array, csr_matrix
 from scipy.sparse.csgraph import connected_components
+# from scipy.special import binom
 from scipy.stats import chi2, entropy
-from scipy.special import binom
+# from torch.utils.data import Subset
+# from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+from sklearn.neighbors import NearestNeighbors, kneighbors_graph
+
 # from cuml import KMeans, DBSCAN
-from cuml.manifold.umap import UMAP
+# from cuml.manifold.umap import UMAP
 # from sklearn.cluster import KMeans, DBSCAN
 # from umap import UMAP
 # from omegaconf import OmegaConf
 
 
-def umap_and_plot(z, clu, labels, batches):
-    if clu.ndim == 2:
-        clu = clu.argmax(dim=1)
-    # ------------------------------------------------------------------------
-    # 使用cuml
-    # cuml无法通过参数指定使用的devices，所以我们直接将pytorch使用的device也固定
-    #   为第一个gpu，然后通过环境变量CUDA_VISIBLE_DEVICES来指定训练时使用哪个gpu，
-    #   这样可以保证cuml和pytorch使用一个gpu
-    umap_op = UMAP(n_components=2, random_state=0)
-    x_umap = umap_op.fit_transform(z)
-    x_umap, clu = cp.asnumpy(x_umap), cp.asnumpy(clu)
-    # ------------------------------------------------------------------------
-    # 使用umap(cpu)
-    # z, clu = z.cpu().numpy(), clu.cpu().numpy()
-    # umap_op = UMAP(
-    #     n_components=2, n_neighbors=30, min_dist=0.2, random_state=0,
-    #     init="random"  # init使用random后会提高性能
-    # )
-    # x_umap = umap_op.fit_transform(z)
-    # ------------------------------------------------------------------------
-    x_umap = pd.DataFrame(x_umap, columns=["Z1", "Z2"])
-    for name, arr in zip(
-        ["batch", "label", "cluster"], [batches, labels, clu]
-    ):
-        x_umap[name] = arr
-        x_umap[name] = x_umap[name].astype("category")
-    fg_label = sns.relplot(
-        data=x_umap, x="Z1", y="Z2", hue="label", col="batch", col_wrap=2, s=5,
-        height=4
-    )
-    fg_cluster = sns.relplot(
-        data=x_umap, x="Z1", y="Z2", hue="cluster", col="batch", col_wrap=2,
-        s=5, height=4
-    )
-    return {"label": fg_label, "cluster": fg_cluster}
-
-
+# def umap_and_plot(z, clu, labels, batches):
+#     if clu.ndim == 2:
+#         clu = clu.argmax(dim=1)
+#     # ------------------------------------------------------------------------
+#     # 使用cuml
+#     # cuml无法通过参数指定使用的devices，所以我们直接将pytorch使用的device也固定
+#     #   为第一个gpu，然后通过环境变量CUDA_VISIBLE_DEVICES来指定训练时使用哪个gpu，
+#     #   这样可以保证cuml和pytorch使用一个gpu
+#     umap_op = UMAP(n_components=2, random_state=0)
+#     x_umap = umap_op.fit_transform(z)
+#     x_umap, clu = cp.asnumpy(x_umap), cp.asnumpy(clu)
+#     # ------------------------------------------------------------------------
+#     # 使用umap(cpu)
+#     # z, clu = z.cpu().numpy(), clu.cpu().numpy()
+#     # umap_op = UMAP(
+#     #     n_components=2, n_neighbors=30, min_dist=0.2, random_state=0,
+#     #     init="random"  # init使用random后会提高性能
+#     # )
+#     # x_umap = umap_op.fit_transform(z)
+#     # ------------------------------------------------------------------------
+#     x_umap = pd.DataFrame(x_umap, columns=["Z1", "Z2"])
+#     for name, arr in zip(
+#         ["batch", "label", "cluster"], [batches, labels, clu]
+#     ):
+#         x_umap[name] = arr
+#         x_umap[name] = x_umap[name].astype("category")
+#     fg_label = sns.relplot(
+#         data=x_umap, x="Z1", y="Z2", hue="label", col="batch", col_wrap=2, s=5,
+#         height=4
+#     )
+#     fg_cluster = sns.relplot(
+#         data=x_umap, x="Z1", y="Z2", hue="cluster", col="batch", col_wrap=2,
+#         s=5, height=4
+#     )
+#     return {"label": fg_label, "cluster": fg_cluster}
+#
+#
 ##############################################################################
 #
 # graph connectivity score from scIB
@@ -133,7 +134,7 @@ def entropy_for_predict_logit(logit, norm=False):
 
 
 def graph_connectivity(X=None, G=None, groups=None, k=10, n_jobs=0):
-    """"
+    """ "
     Quantify how connected the subgraph corresponding to each batch cluster is.
     Calculate per label: #cells_in_largest_connected_component/#all_cells
     Final score: Average over labels
@@ -146,8 +147,11 @@ def graph_connectivity(X=None, G=None, groups=None, k=10, n_jobs=0):
         # TODO: 还可以使用cuml进一步进行加速
         # calculate the adjacency matrix of the neighborhood graph
         G = kneighbors_graph(
-            X, n_neighbors=k, mode='connectivity', include_self=False,
-            n_jobs=n_jobs
+            X,
+            n_neighbors=k,
+            mode="connectivity",
+            include_self=False,
+            n_jobs=n_jobs,
         )
     elif G is None:
         raise ValueError("Either X or G should be provided")
@@ -158,7 +162,7 @@ def graph_connectivity(X=None, G=None, groups=None, k=10, n_jobs=0):
     for group in np.sort(np.unique(groups)):
         G_sub = G[groups == group, :][:, groups == group]
         _, labels = connected_components(
-            csr_matrix(G_sub), connection='strong'
+            csr_matrix(G_sub), connection="strong"
         )
         tab = pd.value_counts(labels)
         clust_res.append(tab.max() / sum(tab))
@@ -184,14 +188,13 @@ def kBET(
     # temp_folder: str = None,
     # use_cache: bool = True,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
-
     """
     The kBET metric is defined in [Büttner18]_, which measures if cells from
     different samples mix well in their local neighborhood.
     """
     assert data is not None or G is not None
     if isinstance(K, float):
-        assert K > 0. and K < 1.
+        assert K > 0.0 and K < 1.0
         K = int(data.shape[0] * K)
 
     if data is None:
@@ -207,15 +210,15 @@ def kBET(
 
     if G is None:
         knn = NearestNeighbors(
-                n_neighbors=K - 1, n_jobs=n_jobs
+            n_neighbors=K - 1, n_jobs=n_jobs
         )  # eliminate the first neighbor, which is the node itself
         knn.fit(data)
         _, indices = knn.kneighbors()
     if data is None:
         indices, indptr = G.indices, G.indptr
-        indices = np.array([
-            indices[indptr[i]:indptr[i+1]] for i in range(nsamples)
-        ])
+        indices = np.array(
+            [indices[indptr[i]:indptr[i + 1]] for i in range(nsamples)]
+        )
     knn_indices = np.concatenate(
         (np.arange(nsamples).reshape(-1, 1), indices), axis=1
     )  # add query as 1-nn
@@ -225,7 +228,7 @@ def kBET(
     batch_knn = batch_oh[knn_indices]
     batch_cnt_knn = batch_knn.sum(axis=1)
     stats = ((batch_cnt_knn - cnt_expect) ** 2 / cnt_expect).sum(axis=-1)
-    pvals = 1 - chi2.cdf(stats, nbatches-1)
+    pvals = 1 - chi2.cdf(stats, nbatches - 1)
 
     accept_rate = (pvals >= alpha).mean()
 
@@ -242,9 +245,16 @@ def kBET(
 
 
 def leiden_cluster(
-    X=None, G=None, n_neighbors=30, resolution=1, random_state=0,
-    n_iterations=-1, directed=True, add_weights=False, n_jobs=0,
-    **partition_kwargs
+    X=None,
+    G=None,
+    n_neighbors=30,
+    resolution=1,
+    random_state=0,
+    n_iterations=-1,
+    directed=True,
+    add_weights=False,
+    n_jobs=0,
+    **partition_kwargs,
 ):
     assert X is not None or G is not None
     partition_kwargs = dict(partition_kwargs)
@@ -260,10 +270,10 @@ def leiden_cluster(
         igg.es["weight"] = G.data
 
     partition_type = leidenalg.RBConfigurationVertexPartition
-    partition_kwargs['n_iterations'] = n_iterations
-    partition_kwargs['seed'] = random_state
+    partition_kwargs["n_iterations"] = n_iterations
+    partition_kwargs["seed"] = random_state
     if resolution is not None:
-        partition_kwargs['resolution_parameter'] = resolution
+        partition_kwargs["resolution_parameter"] = resolution
     part = leidenalg.find_partition(igg, partition_type, **partition_kwargs)
     return np.array(part.membership)
 
@@ -275,42 +285,42 @@ def leiden_cluster(
 ############################################################################
 
 
-def ari(group1, group2, implementation=None):
-    """ Adjusted Rand Index
-    The function is symmetric, so group1 and group2 can be switched
-    For single cell integration evaluation the scenario is:
-        predicted cluster assignments vs. ground-truth (e.g. cell type)
-        assignments
-    :param adata: anndata object
-    :param group1: string of column in adata.obs containing labels
-    :param group2: string of column in adata.obs containing labels
-    :params implementation: of set to 'sklearn', uses sklearns
-        implementation, otherwise native implementation is taken
-    """
-
-    if len(group1) != len(group2):
-        raise ValueError(
-            f'different lengths in group1 ({len(group1)}) '
-            f'and group2 ({len(group2)})'
-        )
-
-    if implementation == 'sklearn':
-        return adjusted_rand_score(group1, group2)
-
-    def binom_sum(x, k=2):
-        return binom(x, k).sum()
-
-    n = len(group1)
-    contingency = pd.crosstab(group1, group2)
-
-    ai_sum = binom_sum(contingency.sum(axis=0))
-    bi_sum = binom_sum(contingency.sum(axis=1))
-
-    index = binom_sum(np.ravel(contingency))
-    expected_index = ai_sum * bi_sum / binom_sum(n, 2)
-    max_index = 0.5 * (ai_sum + bi_sum)
-
-    return (index - expected_index) / (max_index - expected_index)
+# def ari(group1, group2, implementation=None):
+#     """Adjusted Rand Index
+#     The function is symmetric, so group1 and group2 can be switched
+#     For single cell integration evaluation the scenario is:
+#         predicted cluster assignments vs. ground-truth (e.g. cell type)
+#         assignments
+#     :param adata: anndata object
+#     :param group1: string of column in adata.obs containing labels
+#     :param group2: string of column in adata.obs containing labels
+#     :params implementation: of set to 'sklearn', uses sklearns
+#         implementation, otherwise native implementation is taken
+#     """
+#
+#     if len(group1) != len(group2):
+#         raise ValueError(
+#             f"different lengths in group1 ({len(group1)}) "
+#             f"and group2 ({len(group2)})"
+#         )
+#
+#     if implementation == "sklearn":
+#         return adjusted_rand_score(group1, group2)
+#
+#     def binom_sum(x, k=2):
+#         return binom(x, k).sum()
+#
+#     n = len(group1)
+#     contingency = pd.crosstab(group1, group2)
+#
+#     ai_sum = binom_sum(contingency.sum(axis=0))
+#     bi_sum = binom_sum(contingency.sum(axis=1))
+#
+#     index = binom_sum(np.ravel(contingency))
+#     expected_index = ai_sum * bi_sum / binom_sum(n, 2)
+#     max_index = 0.5 * (ai_sum + bi_sum)
+#
+#     return (index - expected_index) / (max_index - expected_index)
 
 
 #############################################################################

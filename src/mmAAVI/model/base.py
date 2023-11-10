@@ -27,8 +27,8 @@ from .train.checkpoint import Checkpointer
 from .train.early_stop import EarlyStopper, LearningRateUpdateEarlyStopper
 from .train.history import History
 from .train.metrics import leiden_cluster
-from .train.utils import concat_embeds  # seq2ndarray,; calc_scores
-from .train.utils import tensors_to_device, umap_embeds_in_tb
+from .train.utils import concat_embeds, tensors_to_device
+#   seq2ndarray, calc_scores, umap_embeds_in_tb
 
 
 T = torch.Tensor
@@ -352,8 +352,8 @@ class MMOModel(nn.Module):
         lr_schedual: Optional[str] = "reduce_on_plateau",
         sch_kwargs: dict[str, Any] = {"factor": 0.1, "patience": 5},
         sch_max_update: Optional[int] = 2,
-        valid_umap_interval: int = 3,
-        valid_show_umap: Optional[Union[str, Sequence[str]]] = None,
+        # valid_umap_interval: int = 3,
+        # valid_show_umap: Optional[Union[str, Sequence[str]]] = None,
         checkpoint_best: bool = True,
         early_stop: bool = True,
         early_stop_patient: int = 10,
@@ -393,19 +393,20 @@ class MMOModel(nn.Module):
                 )
 
         if valid_loader is not None:
-            if valid_show_umap is not None:
-                if isinstance(valid_show_umap, str):
-                    valid_show_umap = [valid_show_umap]
-                if isinstance(valid_loader, ParallelDataLoader):
-                    omic_loader = valid_loader.data_loaders[0]
-                else:
-                    omic_loader = valid_loader
-                valid_data = omic_loader.dataset._mdata
-                obs_labels = {
-                    namei: valid_data.obs.loc[:, namei]  # 这里是series
-                    for namei in valid_show_umap
-                }
-
+            pass
+            # if valid_show_umap is not None:
+            #     if isinstance(valid_show_umap, str):
+            #         valid_show_umap = [valid_show_umap]
+            #     if isinstance(valid_loader, ParallelDataLoader):
+            #         omic_loader = valid_loader.data_loaders[0]
+            #     else:
+            #         omic_loader = valid_loader
+            #     valid_data = omic_loader.dataset._mdata
+            #     obs_labels = {
+            #         namei: valid_data.obs.loc[:, namei]  # 这里是series
+            #         for namei in valid_show_umap
+            #     }
+            #
         device = torch.device(device)
         self.to(device)
 
@@ -436,7 +437,8 @@ class MMOModel(nn.Module):
             sch_kwargs=sch_kwargs,
         )
 
-        flag_cat_valid_outputs = valid_show_umap and writer is not None
+        # flag_cat_valid_outputs = valid_show_umap and writer is not None
+        flag_cat_valid_outputs = writer is not None
 
         self._handle_weight_values(max_epochs, kweights)
 
@@ -533,19 +535,19 @@ class MMOModel(nn.Module):
                     else:
                         clu = clu_prob.argmax(dim=1).detach().cpu().numpy()
 
-                if (
-                    ((e % valid_umap_interval == 0) or e == (max_epochs - 1))
-                    and valid_show_umap
-                    and writer is not None
-                ):
-                    # 绘制umap到tensorboard中
-                    # valid可能也是shuffle的，则需要通过index来重新得到这些
-                    # label的顺序
-                    obs_labels_i = {
-                        k: v.loc[indexes].values for k, v in obs_labels.items()
-                    }
-                    obs_labels_i["cluster"] = clu
-                    umap_embeds_in_tb(e, writer, z, obs_labels_i)
+                # if (
+                #     ((e % valid_umap_interval == 0) or e == (max_epochs - 1))
+                #     and valid_show_umap
+                #     and writer is not None
+                # ):
+                #     # 绘制umap到tensorboard中
+                #     # valid可能也是shuffle的，则需要通过index来重新得到这些
+                #     # label的顺序
+                #     obs_labels_i = {
+                #         k: v.loc[indexes].values for k, v in obs_labels.items()
+                #     }
+                #     obs_labels_i["cluster"] = clu
+                #     umap_embeds_in_tb(e, writer, z, obs_labels_i)
 
             # 监控并保存模型
             # 这个score_main可能lr_sch和save_best都会用到

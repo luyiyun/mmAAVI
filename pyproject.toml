@@ -31,7 +31,8 @@ dependencies = [
   # model module
   "tqdm>=4.66.1",
   "igraph>=0.10.3",
-  "leidenalg>=0.9.1"
+  "leidenalg>=0.9.1",
+  "tensorboard>=2.14"
 ]
 # optional-dependencies = { dataframe = ["pandas"] }
 

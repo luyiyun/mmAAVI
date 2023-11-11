@@ -8,6 +8,9 @@ outputs/
 
 # -- python --
 **/__pycache__/
+# -- python: packages --
+build/
+**/*.egg-info/
 
 # -- R --
 .Rproj.user

@@ -1,249 +1,263 @@
-# ---
-# jupyter:
-#   jupytext:
-#     formats: ipynb,py:percent
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
-#       jupytext_version: 1.15.0
-#   kernelspec:
-#     display_name: Python 3 (ipykernel)
-#     language: python
-#     name: python3
-# ---
-
-# %%
-import sys
-import os
 import os.path as osp
+import logging
 
 import numpy as np
 import pandas as pd
 import anndata as ad
 import scanpy as sc
+import biothings_client as bc
+from mudata import MuData
 from scipy import sparse as sp
 from tqdm import tqdm
+from mmAAVI.genomic import Bed
+from mmAAVI.preprocess import log1p_norm, lsi
 
-# %%
-sys.path.append(osp.abspath("../../src"))
-from mmAAVI import dataset as D
+# sys.path.append(osp.abspath("../../src"))
+# from mmAAVI import dataset as D
 
-# %%
-root = "../../data/PBMC/raw"
-res_dir = "./res/1_pp/"
+root = "./data/"
+# res_dir = "./res/1_pp/"
+# os.makedirs(res_dir, exist_ok=True)
 
-# %%
-os.makedirs(res_dir, exist_ok=True)
+# ====================== Create the mosaic dataset ======================
+logging.info("create mosaic dataset ......")
+# cell names
+obses = {}
+for i in range(1, 5):
+    obsi = pd.read_csv(osp.join(root, f"meta_c{i}.csv"), index_col=0)
+    obsi["batch"] = i
+    obsi.index = obsi.index.map(lambda x: f"batch{i}:{x}")
+    obses[i] = obsi
 
-# %% [markdown]
-# # Create the mosaic dataset
-
-# %%
-counts_prefix = {"atac": "RxC", "rna": "GxC", "protein": "PxC"}
-batch_names = [str(i) for i in range(1, 5)]
-
-# %% [markdown]
-# ## variables
-
-# %%
 # atac
-fn = osp.join(root, "regions.txt")
-names = np.loadtxt(fn, dtype="U")
-dfi = pd.Series(names).str.split("_", expand=True)
-assert not dfi.isna().any().any()
-dfi.columns = ["chrom", "chromStart", "chromEnd"]
-dfi["chrom"] = dfi["chrom"].str.slice(start=3)
-dfi[["chromStart", "chromEnd"]] = \
-    dfi[["chromStart", "chromEnd"]].astype(int)
-dfi.index = names
-var_atac = dfi
-var_atac.head()
+# peak names
+peak_names = np.loadtxt(osp.join(root, "regions.txt"), dtype="U")
+atac_df = pd.Series(peak_names).str.split("_", expand=True)
+assert not atac_df.isna().any().any()
+atac_df.columns = ["chrom", "chromStart", "chromEnd"]
+atac_df["chrom"] = atac_df["chrom"].str.slice(start=3)
+atac_df[["chromStart", "chromEnd"]] = atac_df[
+    ["chromStart", "chromEnd"]
+].astype(int)
+atac_df.index = peak_names.astype(np.str_)
+# counts
+atac = []
+for i in range(1, 5):
+    fn = osp.join(root, f"RxC{i}.npz")
+    if not osp.exists(fn):
+        continue
+    datai = sp.load_npz(fn).T
+    datai = sp.csr_matrix(datai)
+    adatai = ad.AnnData(datai, obs=obses[i], var=atac_df)
+    atac.append(adatai)
+atac = ad.concat(atac, axis=0, merge="same")  # same表示只保留数据集中相同的var columns
 
-# %%
+
 # rna
-fn = osp.join(root, "genes.txt")
-names = np.loadtxt(fn, dtype="U")
-dfi = D.search_genomic_pos(
-    names,
-    remove_genes=(("ZNF781", 37668579.), ("LINC02256", 30427080)),
-    cache_url="../mygene_cache"
+rna_names = np.loadtxt(osp.join(root, "genes.txt"), dtype="U")
+# use biothings_client to get the location of genes in chromosome
+cache_url = "./mygene_cache.sqlite"
+gene_client = bc.get_client("gene")
+gene_client.set_caching(cache_url)
+gene_meta = gene_client.querymany(
+    rna_names,
+    species="human",
+    scopes=["symbol"],
+    fields=[
+        "_score",
+        "name",
+        "genomic_pos.chr",
+        "genomic_pos.start",
+        "genomic_pos.end",
+        "genomic_pos.strand",
+    ],
+    as_dataframe=True,
+    df_index=True,
 )
-# 将chrom的缺失值全部换成.，为了方便后面构造network
-dfi.fillna({"chrom": "."}, inplace=True)
-dfi["strand"] = dfi.strand.replace({1.0: "+", -1.0: "-"}).fillna("+")
-dfi["chromStart"] = dfi.chromStart.fillna(0.)
-dfi["chromEnd"] = dfi.chromEnd.fillna(0.)
-var_rna = dfi
-var_rna.head()
+gene_client.stop_caching()
+gene_meta.rename(
+    inplace=True,
+    columns={
+        "_score": "score",
+        "genomic_pos.chr": "chrom",
+        "genomic_pos.start": "chromStart",
+        "genomic_pos.end": "chromEnd",
+        "genomic_pos.strand": "strand",
+    },
+)
+# only remain autosomal and sex chromosome genes
+gene_meta = gene_meta[
+    gene_meta["chrom"].isin([str(i) for i in range(1, 23)] + ["X", "Y"])
+]
+# remove duplicated genes
+mask_dup = gene_meta.index.duplicated(keep=False)
+gene_meta_nodup = gene_meta[~mask_dup]
+gene_meta_dup = gene_meta[mask_dup]
+remain_index = np.concatenate(
+    [
+        (
+            (gene_meta_dup.index == "LINC00685") & (gene_meta_dup.chrom == "X")
+        ).values.nonzero()[0],
+        (
+            (gene_meta_dup.index == "ZNF781")
+            & (gene_meta_dup.chromStart == 37667751)
+        ).values.nonzero()[0],
+        (
+            (gene_meta_dup.index == "ITFG2-AS1")
+            & (gene_meta_dup.chromStart == 2695765)
+        ).values.nonzero()[0],
+        (
+            (gene_meta_dup.index == "LINC02256")
+            & (gene_meta_dup.chromStart == 32536047)
+        ).values.nonzero()[0],
+    ]
+)
+gene_meta = pd.concat([gene_meta_nodup, gene_meta_dup.iloc[remain_index, :]])
+# reordering
+rna_df = gene_meta.reindex(index=rna_names)
+# postprocess the rna_df
+rna_df.fillna({"chrom": "."}, inplace=True)
+rna_df["strand"] = rna_df.strand.replace({1.0: "+", -1.0: "-"}).fillna("+")
+rna_df["chromStart"] = rna_df.chromStart.fillna(0.0)
+rna_df["chromEnd"] = rna_df.chromEnd.fillna(0.0)
+# 必须要保留strand，后面在进行Bed.expand时需要它
+rna_df = rna_df[["chrom", "chromStart", "chromEnd", "strand"]]
+rna_df["strand"] = rna_df["strand"].astype(np.str_)
+rna_df.index = rna_df.index.astype(np.str_)
+# counts
+rna = []
+for i in range(1, 5):
+    fn = osp.join(root, f"GxC{i}.npz")
+    if not osp.exists(fn):
+        continue
+    datai = sp.load_npz(fn).T
+    datai = sp.csr_matrix(datai)
+    adatai = ad.AnnData(datai, obs=obses[i], var=rna_df)
+    rna.append(adatai)
+rna = ad.concat(rna, axis=0, merge="same")
 
-# %%
 # protein
 fn = osp.join(root, "proteins_alias.txt")
-names = np.loadtxt(fn, dtype="U")
-names_ori = [line[0] for line in names]
-names_alias = [",".join(line) for line in names]
-var_protein = pd.DataFrame(dict(alias=names_alias), index=names_ori)
-var_protein.head()
+prot_names = np.loadtxt(fn, dtype="U")
+prot_ori = np.array([line[0] for line in prot_names], dtype=np.str_)
+prot_alias = np.array([",".join(line) for line in prot_names], dtype=np.str_)
+prot_df = pd.DataFrame(dict(alias=prot_alias), index=prot_ori)
+# counts
+protein = []
+for i in range(1, 5):
+    fn = osp.join(root, f"PxC{i}.npz")
+    if not osp.exists(fn):
+        continue
+    datai = sp.load_npz(fn).T
+    datai = datai.toarray()
+    adatai = ad.AnnData(datai, obs=obses[i], var=prot_df)
+    protein.append(adatai)
+protein = ad.concat(protein, axis=0, merge="same")
 
-# %%
-var = pd.concat([var_atac[[]], var_rna[[]], var_protein[[]]])
-var.tail()
+# NOTE: 这样会导致atac在前面，也取出第3、4个批次放在前面，可以交换rna和atac的顺序来解决
+mdata = MuData({"atac": atac, "rna": rna, "protein": protein})
+mdata.var_names_make_unique()
+# mdata.write(osp.join(root, "pbmc.h5mu"))
+print(mdata)
 
-# %% [markdown]
-# ## graph
+# ====================== Preprocess the data ======================
+# mdata = read(osp.join(root, "pbmc.h5mu"))
+logging.info("preprocess dataset ......")
 
-# %%
-# atac-rna
-
-bed_rna = D.Bed(var_rna)
-bed_atac = D.Bed(var_atac)
-
+# === 1. construct graph ===
+# 1. atac-rna
+bed_rna = Bed(mdata.mod["rna"].var)
+bed_atac = Bed(mdata.mod["atac"].var)
 atac_rna = bed_atac.window_graph(
     bed_rna.expand(upstream=2e3, downstream=0),
-    window_size=0, use_chrom=[str(i) for i in range(1, 23)] + ["X","Y"]
+    window_size=0,
+    use_chrom=[str(i) for i in range(1, 23)] + ["X", "Y"],
 )
-print(atac_rna.shape, atac_rna.nnz)
-
-# %%
-# rna-protein
+# 2. rna-protein
+var_protein = mdata.mod["protein"].var
+var_rna = mdata.mod["rna"].var
+var_rna_index = var_rna.index.str.slice(4)
 row, col = [], []
-for i, p_alias in tqdm(enumerate(var_protein["alias"]), total=var_protein.shape[0]):
-    for j, g_symbol in enumerate(var_rna.index):
+for i, p_alias in tqdm(
+    enumerate(var_protein["alias"]), total=var_protein.shape[0]
+):
+    for j, g_symbol in enumerate(var_rna_index):
         if (g_symbol in p_alias) or (g_symbol.lower() in p_alias.lower()):
             row.append(j)
             col.append(i)
 row, col = np.array(row), np.array(col)
-rna_protein = sp.coo_array((np.ones_like(row), (row, col)), shape=(var_rna.shape[0], var_protein.shape[0]))
-print(rna_protein.shape)
-print(rna_protein.nnz)
-
-# %%
-# only remain the features which are in the network
-mask_atac = (atac_rna.todense() > 0.).any(axis=1)
-mask_rna = (atac_rna.todense() > 0.).any(axis=0) | (rna_protein.todense() > 0.).any(axis=1)
-mask_protein = (rna_protein.todense() > 0.).any(axis=0)
-print(mask_atac.sum(), mask_rna.sum(), mask_protein.sum())
-
-var = pd.concat([var_atac.loc[mask_atac, []], var_rna.loc[mask_rna, []], var_protein.loc[mask_protein, []]])
-atac_rna = sp.coo_array(atac_rna.todense()[mask_atac, :][:, mask_rna])
-rna_protein = sp.coo_array(rna_protein.todense()[mask_rna, :][:, mask_protein])
-
-# %% [markdown]
-# ## expressions
-
-# %%
-dats = []
-for bi in batch_names:
-    for oi, oprf in counts_prefix.items():
-        fn = osp.join(root, "%s%s.npz" % (oprf, bi))
-        if osp.exists(fn):
-            datai = sp.load_npz(fn).T
-            if oi == "protein":
-                datai = np.array(datai.todense())
-            else:
-                datai = sp.csr_array(datai)
-            feat_mask = {"atac": mask_atac, "rna": mask_rna, "protein": mask_protein}[oi]
-            datai = datai[:, feat_mask]
-        else:
-            datai = None
-        dats.append(("batch"+bi, oi, datai))
-mdat = D.MosaicData(
-    dats, var=var, nets={"window": [("atac", "rna", atac_rna), ("rna", "protein", rna_protein)]}
+rna_protein = sp.coo_array(
+    (np.ones_like(row), (row, col)),
+    shape=(var_rna.shape[0], var_protein.shape[0]),
 )
+# 3. global network
+n_atac, n_rna, n_prot = (
+    mdata.mod["atac"].n_vars,
+    mdata.mod["rna"].n_vars,
+    mdata.mod["protein"].n_vars,
+)
+net = sp.vstack(
+    [
+        sp.hstack(
+            [
+                sp.coo_array((n_atac, n_atac)),
+                atac_rna,
+                sp.coo_array((n_atac, n_prot)),
+            ]
+        ),
+        sp.hstack([atac_rna.T, sp.coo_array((n_rna, n_rna)), rna_protein]),
+        sp.hstack(
+            [
+                sp.coo_array((n_prot, n_atac)),
+                rna_protein.T,
+                sp.coo_array((n_prot, n_prot)),
+            ]
+        ),
+    ]
+)
+mdata.varp["net"] = sp.csr_matrix(net)  # anndata only support csr and csc
 
-# %%
-print(mdat)
+# === 2. filter features ===
+# only remain the features which are in the network
+mask = net.sum(axis=0) > 0
+mdata = mdata[:, mask]
+# get the embedding for each data matrix
+n_embeds = 100
+for m in mdata.mod.keys():
+    adatai = mdata.mod[m]
+    adatai.obsm["log1p_norm"] = np.zeros(adatai.shape)
+    adatai.obsm["lsi_pca"] = np.zeros((adatai.n_obs, n_embeds))
+    for bi in adatai.obs["batch"].unique():
+        maski = (adatai.obs["batch"] == bi).values
+        datai = adatai.X[maski, :]
+        # 1st pp method: log1p and normalization
+        adatai.obsm["log1p_norm"][maski, :] = log1p_norm(datai)
+        # 2nd pp method: lsi for atac and pca for others
+        if m == "atac":
+            embedi = lsi(datai, n_components=100, n_iter=15)
+        else:
+            if sp.issparse(datai):
+                datai = sp.csr_matrix(datai)
+            adata_cp = ad.AnnData(datai).copy()
+            sc.pp.normalize_total(adata_cp)
+            sc.pp.log1p(adata_cp)
+            sc.pp.scale(adata_cp)
+            sc.tl.pca(
+                adata_cp,
+                n_comps=100,
+                use_highly_variable=False,
+                svd_solver="auto",
+            )
+            embedi = adata_cp.obsm["X_pca"]
+        adatai.obsm["lsi_pca"][maski, :] = embedi
 
 
-# %% [markdown]
-# ## representations
-
-# %%
-# 对data_grid进行预处理，使用这些数据作为输入
-def log1p_norm(i, j, dati):
-    EPS = 1e-7
-
-    if dati is None:
-        return None
-
-    if isinstance(dati, np.ndarray):
-        dati = np.log1p(dati)
-    elif sp.issparse(dati):
-        dati = dati.log1p()
-        dati = dati.todense()
-    dati = (dati - dati.mean(axis=0, keepdims=True)) / \
-        (dati.std(axis=0, keepdims=True) + EPS)
-    return dati
-
-
-# %%
-mdat.reps["log1p_norm"] = mdat.X.apply(log1p_norm)
-
-
-# %%
-def lsi_pca(bi, oi, x):
-    if x is None:
-        return None
-    if oi == "atac":
-        return D.lsi(x, n_components=100, n_iter=15)
-    else:
-        if sp.issparse(x):
-            x = sp.csr_matrix(x)
-        x = ad.AnnData(x).copy()
-        sc.pp.normalize_total(x)
-        sc.pp.log1p(x)
-        sc.pp.scale(x)
-        sc.tl.pca(x, n_comps=100, use_highly_variable=False, svd_solver="auto")
-        return x.obsm["X_pca"]
-
-
-# %%
-mdat.reps["lsi_pca"] = mdat.X.apply(lsi_pca)
-
-# %% [markdown]
-# ## observations
-
-# %%
-obs = pd.concat([
-    pd.read_csv(osp.join(root, "meta_c%s.csv" % bi), index_col=0)
-    for bi in batch_names
-])
-obs.rename(columns={"coarse_cluster": "cell_type", "cluster": "fine_cell_type"}, inplace=True)
-print(obs.shape)
-obs.head()
-
-# %%
-ind_dup = obs.index.duplicated(keep=False)
-print("duplicated index has %d" % ind_dup.sum())
-obs.reset_index(inplace=True)
-obs.head()
-
-# %%
-mdat.obs = obs
-
-# %% [markdown]
-# ## saving
-
-# %%
-print(mdat)
-
-# %%
-mdat.save(osp.join(res_dir, "pbmc.mmod"))
-
-# %% [markdown]
-# # Subsample dataset
-
-# %%
-mdat = D.MosaicData.load(osp.join(res_dir, "pbmc.mmod"))
-print(mdat)
-
-# %%
-subsample_sizes = np.arange(0.9, 0.0, -0.1)
-seeds = list(range(6))
-
-# %%
-for subsize in subsample_sizes:
-    for seedi in seeds:
-        _, dat_used = mdat.split(subsize, seed=seedi)
-        dat_used.save(osp.join(res_dir, "pbmc_%d_%d.mmod" % (dat_used.nobs, seedi)))
+# ====================== saving preprocessed data ======================
+logging.info("saving the pp data ......")
+mdata.write(osp.join(root, "pbmc.h5mu"))
+# for subsize in subsample_sizes:
+#     for seedi in seeds:
+#         _, dat_used = mdat.split(subsize, seed=seedi)
+#         dat_used.save(
+#             osp.join(res_dir, "pbmc_%d_%d.mmod" % (dat_used.nobs, seedi))
+#         )

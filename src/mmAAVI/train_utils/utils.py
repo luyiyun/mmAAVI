@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 # from matplotlib.patches import Rectangle
 
 # from ..model import ModelBase
-from ...typehint import BATCH, EMBED
+# from ...typehint import BATCH, EMBED
 # from .metrics import (entropy_for_distant_labels, entropy_for_predict_proba,
 #                       graph_connectivity, kBET, leiden_cluster)
 from .weighter import Weighter
@@ -38,7 +38,7 @@ def seq2ndarray(seq: Sequence) -> np.ndarray:
         raise NotImplementedError
 
 
-def tensors_to_device(tensors: BATCH, device: torch.device) -> BATCH:
+def tensors_to_device(tensors, device: torch.device):
     if torch.is_tensor(tensors):
         return tensors.to(device)
     elif isinstance(tensors, str):
@@ -56,7 +56,7 @@ def tensors_to_device(tensors: BATCH, device: torch.device) -> BATCH:
         # raise ValueError("unknown type: %s" % (str(type(tensors))))
 
 
-def concat_embeds(embeds: Sequence[EMBED]) -> Tuple[T, Optional[T]]:
+def concat_embeds(embeds) -> Tuple[T, Optional[T]]:
     # 得到聚类和z
     if torch.is_tensor(embeds[0]):
         # 这时候只进行了降维，只有z，所以接下来的聚类要使用kmeans进行

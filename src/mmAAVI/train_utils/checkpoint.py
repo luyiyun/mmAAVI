@@ -8,7 +8,6 @@ from .history import History
 
 
 class Checkpointer:
-
     def __init__(self, metric: str, phase: str = "valid") -> None:
         # self._metric = metric
 
@@ -40,9 +39,13 @@ class Checkpointer:
         if flag:
             if verbose >= 3:
                 tqdm.write(
-                    "Best model at %d, %s from %.4f to %.4f" %
-                    (self._epochi, self._k2,
-                     self._best["value"], self._scorei)
+                    "Best model at %d, %s from %.4f to %.4f"
+                    % (
+                        self._epochi,
+                        self._k2,
+                        self._best["value"],
+                        self._scorei,
+                    )
                 )
             self._best["epoch"] = self._epochi
             self._best["value"] = self._scorei

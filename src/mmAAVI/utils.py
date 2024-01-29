@@ -4,10 +4,41 @@ import os
 import pickle
 import random
 from functools import wraps
-from typing import Sequence
+from typing import Sequence, List, Union
 
 import numpy as np
+import pandas as pd
 import torch
+import scipy.sparse as sp
+
+
+def merge_multi_obs_cols(arrs: List[np.ndarray]) -> np.ndarray:
+    """merge all arrs into one, 如果不是none，则相同位置必须相同"""
+    out = arrs[0]
+    for arri in arrs[1:]:
+        mask_out_nan = pd.isnull(out)
+        all_not_nan = np.logical_not(
+            np.logical_or(pd.isnull(arri), mask_out_nan)
+        )
+        assert np.all(arri[all_not_nan] == out[all_not_nan])
+        if np.any(mask_out_nan):
+            out[mask_out_nan] = arri[mask_out_nan]
+    return out
+
+
+def to_dense(
+    arr: Union[np.ndarray, sp.csr_matrix, sp.csc_matrix],
+    squeeze: bool = True,
+) -> np.ndarray:
+    if isinstance(arr, (sp.csr_matrix, sp.csc_matrix)):
+        arr = arr.toarray()
+    elif not isinstance(arr, np.ndarray):
+        raise ValueError(
+            "to_dense just accept ndarray, csr_matrix, and csc_matrix"
+        )
+    if squeeze:
+        arr = arr.squeeze()
+    return arr
 
 
 def read_pkl(fn):
@@ -57,7 +88,7 @@ def save_args(exclude: Sequence[str] = ()):
             params = {}
             for (k, _), v in zip(argments[: len(args)], args):
                 params[k] = v
-            for k, v in argments[len(args):]:
+            for k, v in argments[len(args) :]:
                 params[k] = kwargs.get(k, v)
 
             for ei in exclude:
@@ -87,7 +118,7 @@ def save_args_cls(exclude: Sequence[str] = ()):
             params = {}
             for (k, _), v in zip(argments[: len(args)], args):
                 params[k] = v
-            for k, v in argments[len(args):]:
+            for k, v in argments[len(args) :]:
                 params[k] = kwargs.get(k, v)
 
             for ei in exclude:

@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import numpy as np
 from scipy import sparse as sp
 from sklearn.preprocessing import normalize
@@ -7,7 +9,21 @@ from sklearn.decomposition import PCA
 from .. import typehint as typ
 
 
-def tfidf(X: typ.DATA_ELEM) -> typ.DATA_ELEM:
+def log1p_norm(dat: Tuple[np.ndarray, sp.csr_matrix]) -> np.ndarray:
+    EPS = 1e-7
+
+    if isinstance(dat, np.ndarray):
+        dat = np.log1p(dat)
+    elif sp.issparse(dat):
+        dat = dat.log1p()
+        dat = dat.todense()
+    dat = (dat - dat.mean(axis=0)) / (dat.std(axis=0) + EPS)
+    return dat
+
+
+def tfidf(
+    X: Tuple[np.ndarray, sp.csr_matrix]
+) -> Tuple[np.ndarray, sp.csr_matrix]:
     r"""
     TF-IDF normalization (following the Seurat v3 approach)
 
@@ -23,7 +39,7 @@ def tfidf(X: typ.DATA_ELEM) -> typ.DATA_ELEM:
     """
     idf = X.shape[0] / X.sum(axis=0)
     if sp.issparse(X):
-        tf = X.multiply(1 / X.sum(axis=1)[:, None])
+        tf = X.multiply(1 / X.sum(axis=1))
         return tf.multiply(idf)
     else:
         tf = X / X.sum(axis=1, keepdims=True)

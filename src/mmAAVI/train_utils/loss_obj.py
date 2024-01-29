@@ -1,11 +1,10 @@
 from typing import Mapping
 from collections import UserDict
 
-from ...typehint import T
+from torch import Tensor as T
+
 
 class BatchLoss(UserDict):
-
-
     def __init__(self, **weights: dict[str, float]) -> None:
         super().__init__()
         self._weights = weights
@@ -37,7 +36,7 @@ class BatchLoss(UserDict):
         """The total property."""
         if hasattr(self, "_metric"):
             return self._metric
-        self._metric = 0.
+        self._metric = 0.0
         for k, v in self.data.items():
             if not k.startswith("disc"):
                 self._metric += self._weights[k] * v

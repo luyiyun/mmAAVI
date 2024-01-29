@@ -11,6 +11,8 @@ outputs/
 # -- python: packages --
 build/
 **/*.egg-info/
+**/extension/*
+!**/extension/*.pyx
 
 # -- R --
 .Rproj.user
@@ -49,6 +51,8 @@ experiments/**/res_bak*/*
 **/*.png
 !asset/*.png
 experiments/data/
+experiments/**/data/*
+!experiments/PBMC/data/proteins_alias.txt
 
 # -- others --
 **/StabMap/

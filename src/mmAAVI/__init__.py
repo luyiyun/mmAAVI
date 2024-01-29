@@ -1,1 +1,4 @@
-from . import dataset, model
+from .estimator import MMAAVI
+
+
+__all__ = ["MMAAVI"]

@@ -146,10 +146,8 @@ class VanillaMLP(nn.Module):
         if len(continue_covs) == 0 and len(discrete_covs) == 0:
             return self.net(inpt)
 
-        inpt = [inpt]
-        if continue_covs is not None:
-            inpt.extend(list(continue_covs))
-        if discrete_covs is not None:
+        inpt = [inpt] + continue_covs
+        if len(discrete_covs) > 0:
             for i, t in enumerate(discrete_covs):
                 inpt.append(F.one_hot(t, self.dcov_dims[i]).to(inpt[0]))
         inpt = torch.cat(inpt, dim=-1)

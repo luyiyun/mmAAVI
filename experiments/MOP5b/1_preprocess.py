@@ -1,41 +1,16 @@
-# ---
-# jupyter:
-#   jupytext:
-#     formats: ipynb,py:percent
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
-#       jupytext_version: 1.15.0
-#   kernelspec:
-#     display_name: Python 3 (ipykernel)
-#     language: python
-#     name: python3
-# ---
-
-# %%
-import sys
-# import warnings
+# import sys
 import os
 import os.path as osp
 
 import numpy as np
 import pandas as pd
 import anndata as ad
-import scanpy as sc
+# import scanpy as sc
 from scipy import sparse as sp
 
-# %matplotlib inline
+# root = "../../data/MOP5b/raw"
+# res_dir = "./res/1_pp/"
 
-# %%
-sys.path.append(osp.abspath("../../src"))
-from mmAAVI import dataset as D
-
-# %%
-root = "../../data/MOP5b/raw"
-res_dir = "./res/1_pp/"
-
-# %%
 os.makedirs(res_dir, exist_ok=True)
 
 # %% [markdown]

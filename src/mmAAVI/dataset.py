@@ -250,7 +250,7 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
             newnj = np.random.choice(vnum, remain.size, replace=True, p=vprob)
             j_neg[remain] = newnj
             remain = remain[
-                [item in eset for item in zip(i_neg[remain], j_neg)]
+                [item in eset for item in zip(i_neg[remain], newnj)]
             ]
         return j_neg
 

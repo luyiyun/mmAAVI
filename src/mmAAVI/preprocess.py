@@ -1,12 +1,15 @@
 from typing import Tuple
+import warnings
 
 import numpy as np
 from scipy import sparse as sp
 from sklearn.preprocessing import normalize
 from sklearn.utils.extmath import randomized_svd
 from sklearn.decomposition import PCA
+from mudata import MuData
 
-from .. import typehint as typ
+from . import typehint as typ
+from .utils import merge_multi_obs_cols
 
 
 def log1p_norm(dat: Tuple[np.ndarray, sp.csr_matrix]) -> np.ndarray:
@@ -76,3 +79,23 @@ def lsi(dat: typ.DATA_ELEM, n_components: int = 20, **kwargs) -> np.ndarray:
 def pca(dat: typ.DATA_ELEM, n_components: int = 20, **kwargs) -> np.ndarray:
     res = PCA(n_components, **kwargs).fit_transform(dat)
     return res
+
+
+def merge_obs_from_all_modalities(mdata: MuData, key: str) -> str:
+    if key in mdata.obs.columns:
+        # 如果能直接找到batch label，就直接使用
+        return
+
+    assert all(key in adatai.obs.columns for adatai in mdata.mod.values()), (
+        f"{key} is neither in mudata.obs nor "
+        "in adata.obs for each modality."
+    )
+    # 如果找不到，就根据每个组学的obs创建一个
+    if key in mdata.obs.columns:
+        warnings.warn(
+            f"{key} exists, it will " "be cover by intermediate columns."
+        )
+    array = merge_multi_obs_cols(
+        [mdata.obs[f"{k}:{key}"].values for k in mdata.mod.keys()]
+    )
+    mdata.obs[key] = array

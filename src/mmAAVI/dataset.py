@@ -8,6 +8,7 @@ from typing import (
     Dict,
     Tuple,
     TypedDict,
+    Literal
 )
 
 import numpy as np
@@ -281,15 +282,21 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         weighted_sampling: bool = True,
         drop_self_loop: bool = True,
     ) -> SUBGRAPH:
+        # 其实这里采样的也不是一个子图，而是对整个图的replace重采样，
+        # 可以看做是graph的噪声扰动
         vnum = net.shape[0]
+
+        # NOTE: 遵照之前的写法，把drop_self_loop前置，其会影响到i\j\es\ew的值
+        # TODO: 这里和我原来写的有点区别。这里setdiag会影响到degree的计算；但是原来
+        # 的写法是不会影响到degree的计算的
+        if drop_self_loop:
+            net.setdiag(0)
+
         net_coo = net.tocoo()
         i, j, ew = net_coo.row, net_coo.col, net_coo.data
         es = 2 * (ew > 0) - 1
         ew = np.abs(ew)
         eset = set(zip(i, j))
-        # net_abs = abs(net)
-        # net_abs_coo = net_abs.tocoo()
-        # i, j, ew = net_abs_coo.row, net_abs_coo.col, net_abs_coo.data
 
         # shape, i, j, es, ew = tuple_net
         # assert shape[0] == shape[1], "just suitable symmetric matrix"
@@ -298,10 +305,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         # if drop_self_loop:
         #     ind = i != j
         #     i, j, es, ew = i[ind], j[ind], es[ind], ew[ind]
-        # TODO: 这里和我原来写的有点区别。这里setdiag会影响到degree的计算；但是原来
-        # 的写法是不会影响到degree的计算的
-        if drop_self_loop:
-            net.setdiag(0)
 
         # == calculate probability of vertices
         # eset = set(zip(i, j))
@@ -418,21 +421,17 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         self,
         mdata: MuData,
         net_key: str,
-        # net_style: Literal["dict", "sarr", "walk"],
         batch_size: Union[float, int],
-        # num_workers: Optional[int] = 0,
         drop_self_loop: bool = True,
-        # walk_length: int = 20,
-        # context_size: Optional[int] = 10,
-        # walks_per_node: int = 10,
         num_negative_samples: int = 1,
-        # p: float = 1.0,
-        # q: float = 1.0,
+        phase: Literal["train", "test"] = "train",
+        # TODO:
     ) -> None:
         # copy graph, doesn't affect the original graph (use csr_array)
         net: sp.csr_array = sp.csr_array(mdata.varp[net_key])
         # check symmetry
         assert (net.T - net).nnz == 0, "mmAAVI just accept symmetric graph."
+        assert phase in ["train", "test"], "phase must be train or test."
 
         # add self-loop
         if (net.diagonal() != 0).any():
@@ -447,6 +446,7 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         # assert batch_size is not None
         # assert nets[0][0] == nets[0][1], "the dims of network must be equal"
 
+        self._phase = phase
         self._net_key = net_key
         self._dsl = drop_self_loop
         self._nns = num_negative_samples
@@ -512,7 +512,20 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         #         collate_fn=self.sample_rw,
         #     )
 
+        if self._phase == "test":
+            net_coo = self._net.tocoo()
+            if self._dsl:
+                net_coo.setdiag(0)
+            i, j, ew = net_coo.row, net_coo.col, net_coo.data
+            es = 2 * (ew > 0) - 1
+            ew = np.abs(ew)
+            tupled_graph = (net_coo.shape[0], i, j, ew, es)
+            self._normed_subgraph = self.normalize_subgraph(tupled_graph)
+
     def __iter__(self):
+        if self._phase == "test":
+            return iter([{"normed_subgraph": self._normed_subgraph}])
+
         subgraph = self.sample_subgraph(
             self._net, self._nns, drop_self_loop=self._dsl
         )
@@ -852,6 +865,8 @@ def get_dataloader(
     graph_batch_size: Union[float, int] = 0.5,
     drop_self_loop: bool = True,
     num_negative_samples: int = 1,
+    graph_data_phase: Literal["train", "test"] = "train",
+    random_sample: Optional[int] = None,
 ) -> Union[D.DataLoader, ParallelDataLoader]:
     mdataset = MosaicMuDataset(
         mdata,
@@ -861,18 +876,31 @@ def get_dataloader(
         dlabel_key=dlabel_key,
         sslabel_key=sslabel_key,
     )
-    mdataloader = D.DataLoader(
-        mdataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
+    if random_sample is None:
+        mdataloader = D.DataLoader(
+            mdataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+        )
+    else:
+        sampler = D.RandomSampler(
+            mdataset, replacement=True, num_samples=random_sample
+        )
+        mdataloader = D.DataLoader(
+            mdataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            sampler=sampler,
+        )
     if net_key is None:
         return mdataloader
 
     graphloader = GraphDataLoader(
-        mdata, net_key, graph_batch_size, drop_self_loop, num_negative_samples
+        mdata, net_key, graph_batch_size, drop_self_loop, num_negative_samples,
+        phase=graph_data_phase
     )
     return ParallelDataLoader(
         mdataloader, graphloader, cycle_flags=[False, True]

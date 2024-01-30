@@ -1,13 +1,17 @@
-# import os
+import os
 import os.path as osp
+
 # import sys
 # import time
 import logging
+
 # from typing import Optional, Sequence, Union
 
 # import torch
 import mudata as md
+import scanpy as sc
 from mmAAVI import MMAAVI
+from mmAAVI.preprocess import merge_obs_from_all_modalities
 
 # from mmAAVI.dataset import MosaicData
 # from mmAAVI.model import MMAAVI
@@ -15,12 +19,37 @@ from mmAAVI import MMAAVI
 
 logging.basicConfig(level=logging.INFO)
 
-root = "./data/"
-mdata = md.read(osp.join(root, "pbmc.h5mu"))
+data_dir, res_dir = "./data/", "./res/"
+os.makedirs(res_dir)
 
-model = MMAAVI(sslabel_key="cluster", net_key="net", max_epochs=2)
+mdata = md.read(osp.join(data_dir, "pbmc.h5mu"))
+merge_obs_from_all_modalities(mdata, key="coarse_cluster")
+
+model = MMAAVI(
+    input_key="log1p_norm", sslabel_key="cluster", net_key="net"
+)
 model.fit(mdata)
-import ipdb; ipdb.set_trace()
+mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)
+
+sc.pp.neighbors(mdata, use_rep="mmAAVI_z")
+sc.tl.leiden(mdata, resolution=0.1, key_added="leiden")
+
+model.differential(mdata, "leiden")
+
+sc.tl.umap(mdata, min_dist=0.2)
+# convert categorical
+mdata.obs["batch"] = mdata.obs["batch"].astype("category")
+mdata.obs["mmAAVI_c_label"] = mdata.obs["mmAAVI_c_label"].astype("category")
+# plot and save umap
+fig_umap = sc.pl.umap(
+    mdata,
+    color=["batch", "coarse_cluster", "mmAAVI_c_label", "leiden"],
+    ncols=2,
+    return_fig=True,
+)
+fig_umap.savefig(osp.join(res_dir, "umap.png"))
+
+# ipdb.set_trace()
 # data_dir = "./res/1_pp/"
 # res_dir = "./res/2_mmAAVI/"
 # data_fn = osp.join(data_dir, "pbmc.mmod")

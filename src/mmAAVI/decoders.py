@@ -27,6 +27,15 @@ FRES = Dict[str, Any]  # forward results
 LOSS = Dict[str, T]
 
 
+def split_v(v: T, feat_dims: Dict[str, int]) -> Dict[str, T]:
+    # TODO: 这个分解顺序可能被保证吗？
+    vs, start = {}, 0
+    for k, ndim in feat_dims.items():
+        vs[k] = v[start : (start + ndim), :]  # dim0才是feature的维度
+        start += ndim
+    return vs
+
+
 class GraphDecoder:
     r"""
     Graph decoder
@@ -205,11 +214,7 @@ class DotMultiModalDecoder(BaseMultiOmicsDecoder):
     def forward(self, batch: GMINIBATCH, enc_res: FRES) -> FRES:
         u = enc_res["zsample"]
         v = enc_res["vsample"]
-        # TODO: 这个分解顺序可能被保证吗？
-        vs, start = {}, 0
-        for k, ndim in self.outcs.items():
-            vs[k] = v[start : (start + ndim), :]  # dim0才是feature的维度
-            start += ndim
+        vs = split_v(v, self.outcs)
         if self.pre_mlp is not None:
             u = self.pre_mlp(u)
         res_d = {}
@@ -220,7 +225,7 @@ class DotMultiModalDecoder(BaseMultiOmicsDecoder):
                 ls = None
             di = neti(u, vs[k], batch["blabel"] if self.nbatch else None, ls)
             res_d[k] = di
-        return res_d
+        return {"dist": res_d}
 
     def step(self, batch: GMINIBATCH, enc_res: FRES) -> Tuple[FRES, LOSS]:
         fres = self.forward(batch, enc_res)
@@ -293,10 +298,7 @@ class MixtureMultiModalDecoder(BaseMultiOmicsDecoder):
     def forward(self, batch: GMINIBATCH, enc_res: FRES) -> FRES:
         """这个模型仿效的是mlp decoder，所以不需要将library放在外面"""
         v = enc_res["vsample"]
-        vs, start = {}, 0
-        for k, ndim in self.outcs.items():
-            vs[k] = v[start:(start + ndim), :]
-            start += ndim
+        vs = split_v(v, self.outcs)
 
         res_h, res_d = {}, {}
         for k, mlpi in self.mlps.items():

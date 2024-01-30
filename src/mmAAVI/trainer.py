@@ -1,5 +1,6 @@
-from typing import Union, Optional, Tuple, Any, Dict
+from typing import Union, Optional, Tuple, Any, Dict, Literal
 
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -7,6 +8,7 @@ from torch import optim
 from torch.optim import lr_scheduler as lrsch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from torch.distributions import Normal
 from tqdm import tqdm
 
 from .dataset import ParallelDataLoader
@@ -24,6 +26,7 @@ from .train_utils.utils import tensors_to_device  # , concat_embeds,
 
 
 T = torch.Tensor
+LOADER = Union[DataLoader, ParallelDataLoader]
 
 
 class Trainer:
@@ -78,8 +81,8 @@ class Trainer:
 
     def train(
         self,
-        train_loader: Union[DataLoader, ParallelDataLoader],
-        valid_loader: Optional[Union[DataLoader, ParallelDataLoader]] = None,
+        train_loader: LOADER,
+        valid_loader: Optional[LOADER] = None,
         max_epochs: int = 300,
         device: str = "cuda:0",
         learning_rate: float = 0.002,
@@ -330,7 +333,10 @@ class Trainer:
         return hist_dfs, best
 
     def encode(
-        self, loader: DataLoader, device: str = "cuda:0", verbose: int = 1
+        self,
+        loader: LOADER,
+        device: str = "cuda:0",
+        verbose: int = 1,
     ) -> Dict[str, T]:
         device = torch.device(device)
         self.model.to(device)
@@ -348,7 +354,42 @@ class Trainer:
             res["att"] = torch.cat([di["att"] for di in outputs], dim=0)
         if "c" in outputs[0]:
             res["c"] = torch.cat([di["c"].probs for di in outputs], dim=0)
-        if "v" in outputs[0]:
-            # TODO: 需要将真正的图放入其中，而不是采样的图
-            pass
+        return res
+
+    def reconstruct(
+        self,
+        loader: LOADER,
+        v_param: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        device: str = "cuda:0",
+        verbose: int = 1,
+        random: bool = True,
+        rec_type: Literal["mean", "sample"] = "mean",
+    ) -> Dict[str, T]:
+        device = torch.device(device)
+        self.model.to(device)
+
+        if v_param is None:
+            v_dist = None
+        else:
+            v_mean, v_std = v_param
+            v_mean = torch.tensor(v_mean, dtype=torch.float32, device=device)
+            v_std = torch.tensor(v_std, dtype=torch.float32, device=device)
+            v_dist = Normal(v_mean, v_std)
+
+        res = {}
+        self.model.eval()
+        with torch.no_grad():
+            for batch in tqdm(
+                loader, desc="Reconstruct: ", disable=verbose < 1,
+                leave=False
+            ):
+                batch = tensors_to_device(batch, device)
+                recon = self.model.reconstruct(
+                    batch, v_dist=v_dist, random=random
+                )
+                for k, d in recon.items():
+                    res.setdefault(k, []).append(
+                        d.mean if rec_type == "mean" else d.sample()
+                    )
+        res = {k: torch.cat(v, dim=0) for k, v in res.items()}
         return res

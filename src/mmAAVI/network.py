@@ -11,6 +11,7 @@ from typing import (
 
 import torch
 import torch.nn as nn
+from torch.distributions import Normal
 
 from .dataset import GMINIBATCH
 from .encoders import AttVEncoder, AttGMMVEncoder, GraphEncoder
@@ -70,7 +71,7 @@ class MMAAVINET(nn.Module):
         graph_encoder_init_zero: bool = True,
         # graph_decoder_whole: bool = False,
         temperature: float = 1.0,
-        disc_gradient_weight: float = 20.,  # alpha
+        disc_gradient_weight: float = 20.0,  # alpha
         label_smooth: float = 0.1,
         focal_alpha: float = 2.0,
         focal_gamma: float = 1.0,
@@ -203,6 +204,7 @@ class MMAAVINET(nn.Module):
             )
             self.gdecoder = GraphDecoder()
 
+        self._dim_outputs = dim_outputs  # for trainer
         self._loss_weight_kl_graph = loss_weight_kl_graph
         self._loss_weight_rec_graph = loss_weight_rec_graph
         self._loss_weight_kl_omics = loss_weight_kl_omics
@@ -212,10 +214,20 @@ class MMAAVINET(nn.Module):
 
     def forward(self, batch: GMINIBATCH) -> FRES:
         enc_res = self.encoder(batch)
-        if self.decoder_style != "mlp":
-            genc_res = self.gencoder(batch)
-            enc_res.update(genc_res)
         return enc_res
+
+    def reconstruct(
+        self, batch: GMINIBATCH, v_dist: Optional[Normal] = None,
+        random: bool = True,
+    ) -> FRES:
+        if not random:
+            raise NotImplementedError
+        enc_res = self.encoder(batch)
+        if "zsample" not in enc_res:
+            enc_res["zsample"] = enc_res["z"].sample()
+        enc_res["vsample"] = v_dist.sample()
+        dec_res = self.decoder(batch, enc_res)
+        return dec_res["dist"]
 
     def step(self, batch: GMINIBATCH) -> Tuple[FRES, FRES, FRES, LOSS]:
         all_loss = {}
@@ -245,7 +257,7 @@ class MMAAVINET(nn.Module):
         else:
             disc_res = None
 
-        metric_loss = 0.
+        metric_loss = 0.0
         for k, v in all_loss.items():
             if k.startswith("disc"):
                 continue

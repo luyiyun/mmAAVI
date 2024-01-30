@@ -96,9 +96,9 @@ class MMAAVI:
         batch_key: str = "batch",
         dlabel_key: Optional[str] = None,
         sslabel_key: Optional[str] = None,
-        # TODO: resample, drop_last?
+        # TODO: drop_last?
+        balance_sample: Optional[Union[str, int]] = None,
         batch_size: Optional[int] = None,
-        # shuffle: bool = True,
         num_workers: int = 0,
         pin_memory: bool = True,
         net_key: Optional[str] = None,
@@ -145,6 +145,7 @@ class MMAAVI:
         self.batch_key_ = batch_key
         self.dlabel_key_ = dlabel_key
         self.sslabel_key_ = sslabel_key
+        self.balance_sample_ = balance_sample
         self.batch_size_ = batch_size
         self.num_workers_ = num_workers
         self.pin_memory_ = pin_memory
@@ -257,6 +258,7 @@ class MMAAVI:
             graph_batch_size=self.graph_batch_size_,
             drop_self_loop=self.drop_self_loop_,
             num_negative_samples=self.num_negative_samples_,
+            balance_sample_size=self.balance_sample_
         )
         loader_valid = get_dataloader(
             mdata_valid,
@@ -499,7 +501,7 @@ class MMAAVI:
                 # drop_self_loop=self.drop_self_loop_,
                 # num_negative_samples=self.num_negative_samples_,
                 # graph_data_phase="test",
-                random_sample=nsamples,
+                resample_size=nsamples,
             )
             loader_neg = get_dataloader(
                 mdata=neg_mdat,
@@ -517,7 +519,7 @@ class MMAAVI:
                 # drop_self_loop=self.drop_self_loop_,
                 # num_negative_samples=self.num_negative_samples_,
                 # graph_data_phase="test",
-                random_sample=nsamples,
+                resample_size=nsamples,
             )
             rec_pos = self.trainer_.reconstruct(
                 loader_pos,

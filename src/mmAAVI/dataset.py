@@ -1,15 +1,6 @@
 import logging
 import warnings
-from typing import (
-    Set,
-    List,
-    Optional,
-    Union,
-    Dict,
-    Tuple,
-    TypedDict,
-    Literal
-)
+from typing import Set, List, Optional, Union, Dict, Tuple, TypedDict, Literal
 
 import numpy as np
 import torch
@@ -18,6 +9,7 @@ import scipy.sparse as sp
 from mudata import MuData
 
 from .utils import to_dense
+
 # from mmAAVI.cy_utils import negative_sample_from_graph
 
 
@@ -66,7 +58,7 @@ class MosaicMuDataset(D.Dataset):
         dlabel_key: Optional[str] = None,
         sslabel_key: Optional[str] = None,
     ) -> None:
-        # TODO:
+        # TODO: 如果batch_key是None，也就是没有批次效应，该怎么处理
         if batch_key is None:
             raise NotImplementedError
 
@@ -219,7 +211,54 @@ class MosaicMuDataset(D.Dataset):
 #         return self.nsamples
 
 
-class GraphDataLoader:  # TODO: valid phase时不用sample graph
+class BalanceSizeSampler:
+
+    """
+    根据某个标签(比如batch)重新调整采样的比例， 目的是让这些标签的数量在训练中保持一致
+    不能直接重采样一个mdata，然后放入loader中使用，因为我们必须要保证每个epoch重采样
+        的样本都不一致，这样才能保证泛化性。
+    """
+
+    def __init__(
+        self,
+        mdata: MuData,
+        label_key: str,
+        sample_size: Union[str, int] = "max",
+    ) -> None:
+        if sample_size not in ["max", "min"]:
+            assert isinstance(
+                sample_size, int
+            ), "sample ratio must be min, max or integer."
+
+        label_arr = mdata.obs[label_key].values
+        label_unique = np.unique(label_arr)
+        self._label_len = len(label_unique)
+
+        self._indices_list = [
+            np.nonzero(label_arr == i)[0] for i in label_unique
+        ]
+        self._n_true = [len(ind_arr) for ind_arr in self._indices_list]
+
+        if sample_size == "max":
+            self._n_balance = max(self._n_true)
+        elif sample_size == "min":
+            self._n_balance = min(self._n_true)
+        else:
+            self._n_balance = sample_size
+
+    def __iter__(self):
+        index = []
+        for arr in self._indices_list:
+            index.append(np.random.choice(arr, self._n_balance, replace=True))
+        index = np.concatenate(index)
+        np.random.shuffle(index)
+        return iter(index)
+
+    def __len__(self) -> int:
+        return self._label_len * self._n_balance
+
+
+class GraphDataLoader:
     @staticmethod
     def vertex_degrees(
         net_abs: Union[sp.csr_array, sp.coo_array], direction: str = "both"
@@ -307,11 +346,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         #     i, j, es, ew = i[ind], j[ind], es[ind], ew[ind]
 
         # == calculate probability of vertices
-        # eset = set(zip(i, j))
-        # if weighted_sampling:
-        #     degree = vertex_degrees(tuple_net, direction="both")
-        # else:
-        #     degree = np.ones(vnum, dtype=ew.dtype)
         degree = (
             GraphDataLoader.vertex_degrees(abs(net))
             if weighted_sampling
@@ -337,8 +371,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         i_pos, j_pos = i[edge_ind_pos], j[edge_ind_pos]
         ew_pos = np.ones_like(i_pos, dtype=np.float32)
         es_pos = es[edge_ind_pos]
-        # pi_, pj_, pw_, ps_ = i[psamp], j[psamp], ew[psamp], es[psamp]
-        # pw_ = np.ones_like(pw_)
 
         # == sample the negative edges, prefer bigger vertex prob
         i_neg = np.tile(i_pos, neg_samples)
@@ -347,18 +379,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         j_neg = GraphDataLoader.negative_sample_from_graph_1(
             vnum, eset, i_neg, vprob
         )
-        # nw_ = np.zeros(pw_.size * neg_samples, dtype=pw_.dtype)
-        # ns_ = np.tile(ps_, neg_samples)
-        # nj_ = np.random.choice(
-        #     vnum, pj_.size * neg_samples, replace=True, p=vprob
-        # )
-        # remain = np.where([item in eset for item in zip(ni_, nj_)])[0]
-        # while remain.size:  #  Potential infinite loop if graph too dense
-        #     newnj = np.random.choice(vnum, remain.size,
-        #                              replace=True, p=vprob)
-        #     nj_[remain] = newnj
-        #     remain = remain[[item in eset for item in
-        #               zip(ni_[remain], newnj)]]
 
         i_sample = np.concatenate([i_pos, i_neg])
         j_sample = np.concatenate([j_pos, j_neg])
@@ -425,7 +445,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         drop_self_loop: bool = True,
         num_negative_samples: int = 1,
         phase: Literal["train", "test"] = "train",
-        # TODO:
     ) -> None:
         # copy graph, doesn't affect the original graph (use csr_array)
         net: sp.csr_array = sp.csr_array(mdata.varp[net_key])
@@ -441,76 +460,18 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
             )
         net.setdiag(1)
 
-        # if net_style != "sarr":
-        #     raise NotImplementedError
-        # assert batch_size is not None
-        # assert nets[0][0] == nets[0][1], "the dims of network must be equal"
-
         self._phase = phase
         self._net_key = net_key
         self._dsl = drop_self_loop
         self._nns = num_negative_samples
         self._bs = batch_size
         self._net = net
-        # self._np_generator = np.random.default_rng(seed)
-        # self._th_generator = torch.Generator()
-
-        # self._index = None
-
-        # self.nets = nets
-        # self.net_style = net_style
-        # self.n = np.inf  # 如果没有设置n，则n是无穷大
-        # self.bs = batch_size
-        # self.nw = num_workers
-        # self.drop_self_loop = drop_self_loop
-        # self.vnum = nets[0][0]
-        # self.nns = num_negative_samples
-        # logging.info("number of edges in network is %d" % (nets[1].shape[0]))
 
         if isinstance(self._bs, float):
             assert (self._bs > 0.0) and (self._bs < 1.0)
-            # if self.net_style == "walk":
-            #     self.bs_int = int(self.bs * self.vnum)
-            # elif self.net_style == "sarr":
-            # if self._dsl:
-            #     n_edges = (self.nets[1] != self.nets[2]).sum()
-            # else:
-            #     n_edges = self.nets[1].shape[0]
             n_edges = self._net.nnz
             self._bs = int(n_edges * (1 + self._nns) * self._bs)  # 负采样
-        # else:
-        #     self.bs_int = self.bs
         logging.info("network batch size is %d" % self._bs)
-
-        # if self.net_style == "walk":
-        #     pass
-        #     self.walk_length = walk_length
-        #     self.context_size = context_size
-        #     self.walks_per_node = walks_per_node
-        #     self.num_negative_samples = num_negative_samples
-        #     self.p = p
-        #     self.q = q
-        #     self.random_walk_fn = torch.ops.torch_cluster.random_walk
-
-        #     if self.context_size is not None:
-        #         self.num_walks_per_rw = (
-        #             1 + self.walk_length + 1 - self.context_size
-        #         )
-
-        #     edge_index = torch.tensor(
-        #         np.stack([nets[1], nets[2]], axis=0), dtype=torch.long
-        #     )
-        #     row, col = sort_edge_index(edge_index, num_nodes=self.vnum).cpu()
-        #     self.walk_need = index2ptr(row, self.vnum), col
-        #     self.net_sign = torch.tensor(self.nets[3]).float()
-
-        #     self.walk_loader = D.DataLoader(
-        #         range(self.vnum),
-        #         batch_size=self.bs_int,
-        #         shuffle=True,
-        #         num_workers=self.nw,
-        #         collate_fn=self.sample_rw,
-        #     )
 
         if self._phase == "test":
             net_coo = self._net.tocoo()
@@ -537,15 +498,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
         # self.n_sample_net = self.sampled_net[0].shape[0]
         # self.n = (self.n_sample_net + self.bs_int - 1) // self.bs_int
 
-        # if self.net_style == "walk":
-        #     # def generator():
-        #     #     for walk in self.sampled_loader:
-        #     #         yield {"walk": walk, "coo": self.sarr_sign}
-        #     # return generator()
-        #     return iter(self.walk_loader)
-        # if self.net_style == "sarr":
-        #     self.sample_subgraph()
-        # self._index = 0
         return self
 
     def __next__(self) -> Dict[str, NORMED_SUBGRAPH]:
@@ -560,104 +512,6 @@ class GraphDataLoader:  # TODO: valid phase时不用sample graph
             "graph_minibatch": graph_minibatch,
             "normed_subgraph": self._normed_subgraph,
         }
-
-        # if self.net_style == "dict":
-        #     net = {}
-        #     for k, sarr in self.nets.items():
-        #         negi, negj = sample_negs1(sarr, sarr.nnz)
-        #         posi, posj, wt = sarr.row, sarr.col, sarr.data
-        #         esign = (wt > 0).astype(float)
-        #         wt = np.abs(wt)
-
-        #         iall = torch.tensor(
-        #             np.concatenate([posi, negi]), dtype=torch.long
-        #         )
-        #         jall = torch.tensor(
-        #             np.concatenate([posj, negj]), dtype=torch.long
-        #         )
-        #         sall = torch.tensor(
-        #             np.concatenate([esign, np.ones_like(esign)]),
-        #             dtype=torch.float32,
-        #         )
-        #         wall = torch.tensor(
-        #             np.concatenate([wt, np.zeros_like(wt)]),
-        #             dtype=torch.float32,
-        #         )
-        #         ind = torch.randperm(iall.size(0))
-        #         net[k] = (iall[ind], jall[ind], sall[ind], wall[ind])
-        #     return {"varp": net}
-        # elif self.net_style == "sarr":
-        #     index = slice(
-        #         self._index * self.bs_int, (self._index + 1) * self.bs_int
-        #     )
-        #     sample_graph = tuple(a[index] for a in self.sampled_net)
-        #     return {"sample_graph": sample_graph, "varp": self.sampled_net}
-        # elif self.net_style == "walk":
-        #     raise NotImplementedError  # walk使用其他的迭代器
-
-        # self._index += 1
-
-    # def sample_graph(self) -> None:
-    #     iall, jall, sall, wall = sample_negs2(
-    #         self.nets, neg_samples=self.nns,
-    #         drop_self_loop=self.drop_self_loop
-    #     )
-    #     enorm = normalize_edges(self.nets)
-    #     enorm_all = torch.tensor(
-    #         np.concatenate([enorm, np.zeros(len(iall) - len(enorm))]),
-    #         dtype=torch.float32,
-    #     )
-    #     iall = torch.tensor(iall, dtype=torch.long)
-    #     jall = torch.tensor(jall, dtype=torch.long)
-    #     sall = torch.tensor(sall, dtype=torch.float32)
-    #     wall = torch.tensor(wall, dtype=torch.float32)
-    #     ind = torch.randperm(iall.size(0))
-    #     self.sampled_net = (
-    #         iall[ind],
-    #         jall[ind],
-    #         sall[ind],
-    #         wall[ind],
-    #         enorm_all[ind],
-    #     )
-    #     self.n_sample_net = self.sampled_net[0].shape[0]
-    #     self.n = (self.n_sample_net + self.bs_int - 1) // self.bs_int
-
-    # def sample_rw(self, batch: T):
-    #     if not isinstance(batch, torch.Tensor):
-    #         batch = torch.tensor(batch)
-
-    #     # pos_sample
-    #     start = batch.repeat(self.walks_per_node)
-    #     pos_rw, ed_ind = self.random_walk_fn(
-    #         *self.walk_need,
-    #         start,
-    #         self.walk_length,
-    #         self.p,
-    #         self.q,
-    #     )
-    #     pos_sign = self.net_sign[ed_ind]
-
-    #     # neg_sample
-    #     start = batch.repeat(self.walks_per_node * self.num_negative_samples)
-    #     neg_rw = torch.randint(
-    #         self.vnum,
-    #         (start.size(0), self.walk_length),
-    #         dtype=start.dtype,
-    #         device=start.device,
-    #     )
-    #     neg_rw = torch.cat([start.view(-1, 1), neg_rw], dim=-1)
-
-    #     if self.context_size is not None:
-    #         pos_rw_s, neg_rw_s, pos_sign_s = [], [], []
-    #         for j in range(self.num_walks_per_rw):
-    #             pos_rw_s.append(pos_rw[:, j : (j + self.context_size)])
-    #             neg_rw_s.append(neg_rw[:, j : (j + self.context_size)])
-    #             pos_sign_s.append(pos_sign[:, j:(j + self.context_size - 1)])
-    #         pos_rw = torch.cat(pos_rw_s, dim=0)
-    #         neg_rw = torch.cat(neg_rw_s, dim=0)
-    #         pos_sign = torch.cat(pos_sign_s, dim=0)
-
-    #     return {"walk": (pos_rw, neg_rw), "pos_sign": pos_sign}
 
 
 class ParallelDataLoader:
@@ -711,40 +565,6 @@ class ParallelDataLoader:
         for i in range(self.num_loaders):
             res.update(self._next(i))
         return res
-
-
-# class BalanceSizeSampler:
-#     def __init__(
-#         self,
-#         resample_size: dict[str, float],
-#         blabels: np.ndarray,
-#     ) -> None:
-#         self._resample_size = resample_size
-#         self._batch_index_dict, self._n = {}, 0
-#         blabel_uni = np.unique(blabels)
-#         for bi in blabel_uni:
-#             ind = np.nonzero(blabels == bi)[0]
-#             self._batch_index_dict[bi] = ind
-#             self._n += int(ind.shape[0] * self._resample_size.get(bi, 1.0))
-
-#     def _get_index(self):
-#         index = []
-#         for bk, bi in self._batch_index_dict.items():
-#             ratio = self._resample_size.get(bk, 1.0)
-#             if ratio == 1.0:
-#                 index.append(bi)
-#             else:
-#                 target_size = int(ratio * bi.shape[0])
-#                 index.append(np.random.choice(bi, target_size, replace=True))
-#         index = np.concatenate(index)
-#         np.random.shuffle(index)
-#         return index
-
-#     def __iter__(self):
-#         return iter(self._get_index())
-
-#     def __len__(self) -> int:
-#         return self._n
 
 
 # class SemiSupervisedSampler:
@@ -866,8 +686,18 @@ def get_dataloader(
     drop_self_loop: bool = True,
     num_negative_samples: int = 1,
     graph_data_phase: Literal["train", "test"] = "train",
-    random_sample: Optional[int] = None,
+    resample_size: Optional[int] = None,
+    balance_sample_size: Optional[Union[str, int]] = None,
 ) -> Union[D.DataLoader, ParallelDataLoader]:
+    """
+    resample_size: 随机重新采样的数量，如果是None则不进行重采样，用在differential
+    balance_sample_size: 指定每个批次的采样数量，目的是在训练时平衡批次的样本数量
+    两者不能一起设置
+    """
+    assert (resample_size is None) or (
+        balance_sample_size is None
+    ), "resample_size and balance_sample_size can not be set at the same time."
+
     mdataset = MosaicMuDataset(
         mdata,
         input_key=input_key,
@@ -876,7 +706,7 @@ def get_dataloader(
         dlabel_key=dlabel_key,
         sslabel_key=sslabel_key,
     )
-    if random_sample is None:
+    if resample_size is None and balance_sample_size is None:
         mdataloader = D.DataLoader(
             mdataset,
             batch_size=batch_size,
@@ -885,22 +715,29 @@ def get_dataloader(
             pin_memory=pin_memory,
         )
     else:
-        sampler = D.RandomSampler(
-            mdataset, replacement=True, num_samples=random_sample
-        )
+        if resample_size is not None:
+            sampler = D.RandomSampler(
+                mdataset, replacement=True, num_samples=resample_size
+            )
+        elif balance_sample_size is not None:
+            sampler = BalanceSizeSampler(mdata, batch_key, balance_sample_size)
         mdataloader = D.DataLoader(
             mdataset,
             batch_size=batch_size,
+            sampler=sampler,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            sampler=sampler,
         )
     if net_key is None:
         return mdataloader
 
     graphloader = GraphDataLoader(
-        mdata, net_key, graph_batch_size, drop_self_loop, num_negative_samples,
-        phase=graph_data_phase
+        mdata,
+        net_key,
+        graph_batch_size,
+        drop_self_loop,
+        num_negative_samples,
+        phase=graph_data_phase,
     )
     return ParallelDataLoader(
         mdataloader, graphloader, cycle_flags=[False, True]

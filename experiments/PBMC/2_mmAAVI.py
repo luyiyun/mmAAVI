@@ -20,13 +20,14 @@ from mmAAVI.preprocess import merge_obs_from_all_modalities
 logging.basicConfig(level=logging.INFO)
 
 data_dir, res_dir = "./data/", "./res/"
-os.makedirs(res_dir)
+os.makedirs(res_dir, exist_ok=True)
 
 mdata = md.read(osp.join(data_dir, "pbmc.h5mu"))
 merge_obs_from_all_modalities(mdata, key="coarse_cluster")
 
 model = MMAAVI(
-    input_key="log1p_norm", sslabel_key="cluster", net_key="net"
+    input_key="log1p_norm", sslabel_key="cluster", net_key="net",
+    balance_sample="max",
 )
 model.fit(mdata)
 mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)

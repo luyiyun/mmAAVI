@@ -8,6 +8,7 @@ import logging
 # from typing import Optional, Sequence, Union
 
 # import torch
+import numpy as np
 import mudata as md
 import scanpy as sc
 from mmAAVI import MMAAVI
@@ -24,10 +25,19 @@ os.makedirs(res_dir, exist_ok=True)
 
 mdata = md.read(osp.join(data_dir, "pbmc.h5mu"))
 merge_obs_from_all_modalities(mdata, key="coarse_cluster")
+merge_obs_from_all_modalities(mdata, key="batch")
+batch1_indices = np.nonzero(mdata.obs["batch"] == 1)[0]
+label_indices = np.random.choice(batch1_indices, 100, replace=False)
+ss_label = np.full(mdata.n_obs, np.NaN, dtype=object)
+ss_label[label_indices] = mdata.obs["coarse_cluster"].iloc[label_indices]
+mdata.obs["semisup_label"] = ss_label
 
 model = MMAAVI(
-    input_key="log1p_norm", sslabel_key="cluster", net_key="net",
+    input_key="log1p_norm",
+    # sslabel_key="semisup_label",
+    net_key="net",
     balance_sample="max",
+    num_workers=4,
 )
 model.fit(mdata)
 mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)

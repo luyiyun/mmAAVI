@@ -3,6 +3,7 @@ import warnings
 from typing import Set, List, Optional, Union, Dict, Tuple, TypedDict, Literal
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.utils.data as D
 import scipy.sparse as sp
@@ -161,56 +162,6 @@ class MosaicMuDataset(D.Dataset):
         return patch
 
 
-# class PairBatchRandomSampler:
-#     def __init__(
-#         self,
-#         blabel1: np.ndarray,
-#         blabel2: np.ndarray,
-#         nsamples: int,
-#         dat_ind: int = 1,
-#         seed: int = 0,
-#     ) -> None:
-#         assert dat_ind in [1, 2]
-
-#         batch1_uni = np.unique(blabel1)
-#         batch2_uni = np.unique(blabel2)
-#         self.blabel_uni = np.intersect1d(batch1_uni, batch2_uni)
-
-#         # preprocess batch indices
-#         self.batch1_dict = {
-#             k: np.nonzero(blabel1 == k)[0] for k in self.blabel_uni
-#         }
-#         self.batch2_dict = {
-#             k: np.nonzero(blabel2 == k)[0] for k in self.blabel_uni
-#         }
-
-#         # calculate the probabilities of each batch
-#         cnt = pd.value_counts(np.concatenate([blabel1, blabel2]))
-#         cnt = cnt.loc[self.blabel_uni]
-#         cnt /= cnt.sum()
-
-#         # calculate the
-#         self.bratio = cnt.values
-#         self.nsamples = nsamples
-#         self.dat_ind = dat_ind
-#         self.rng = np.random.default_rng(seed)
-
-#     def __iter__(self):
-#         bsamples = self.rng.multinomial(self.nsamples, self.bratio)
-#         blabel_dict = (
-#             self.batch1_dict if self.dat_ind == 1 else self.batch2_dict
-#         )
-#         res = []
-#         for k, bni in zip(self.blabel_uni, bsamples):
-#             resi = self.rng.choice(blabel_dict[k], bni)
-#             res.append(resi)
-#         res = np.concatenate(res)
-#         return iter(res)
-
-#     def __len__(self):
-#         return self.nsamples
-
-
 class BalanceSizeSampler:
 
     """
@@ -225,7 +176,7 @@ class BalanceSizeSampler:
         label_key: str,
         sample_size: Union[str, int] = "max",
     ) -> None:
-        if sample_size not in ["max", "min"]:
+        if sample_size not in ["max", "min", "mean"]:
             assert isinstance(
                 sample_size, int
             ), "sample ratio must be min, max or integer."
@@ -243,6 +194,8 @@ class BalanceSizeSampler:
             self._n_balance = max(self._n_true)
         elif sample_size == "min":
             self._n_balance = min(self._n_true)
+        elif sample_size == "mean":
+            self._n_balance = int(np.mean(self._n_true))
         else:
             self._n_balance = sample_size
 
@@ -256,6 +209,180 @@ class BalanceSizeSampler:
 
     def __len__(self) -> int:
         return self._label_len * self._n_balance
+
+
+class SemiSupervisedSampler:
+
+    """
+    注意，这是一个batch sampler
+    为半监督生成batch，
+        保证每个batch都包含足够的unlabel和labeled样本。
+        他们两者是分别采样，然后放在一起的。
+        其总批次数量=批次数量较大的那个
+
+    需要同时控制random和np.random的随机性
+    """
+
+    def __init__(
+        self,
+        mdata: MuData,
+        sslabel_key: str,
+        nan_as: int = -1,
+        batch_size: int = 256,
+        label_ratio: float = 0.2,
+        drop_last: bool = False,
+        shuffle: bool = True,
+        repeat_sample: bool = True,
+        balance_label_key: Optional[str] = None,
+        balance_sample_size: Union[str, int] = "max",
+    ) -> None:
+        """
+        label_ratio 表示labeled sample在一个batch size中所占的比例
+        shuffle=True just work for balance_label_key is None
+        repeat_sample=True 如果label或unlabel样本不够时，重新从头开始采样，保证每个
+            批次都有label和unlabel的样本
+        """
+
+        assert (label_ratio >= 0.0) and (
+            label_ratio <= 1.0
+        ), "label_ratio must be in [0, 1]."
+
+        if balance_label_key is not None:
+            assert shuffle, "shuffle must be true if use balance_label_key."
+
+        self._balance_label_key = balance_label_key
+        self._shuffle = shuffle
+        self._repeat_sample = repeat_sample
+
+        self._label_bs = int(batch_size * label_ratio)  # label样本在批次中的数量
+        self._unlabel_bs = batch_size - self._label_bs  # unlabel在批次中的数量
+
+        sslabel = mdata.obs[sslabel_key].values
+        is_unlabel = sslabel == nan_as
+
+        if balance_label_key is not None:
+            balance_sampler = BalanceSizeSampler(
+                mdata, balance_label_key, balance_sample_size
+            )
+            n_balance = balance_sampler._n_balance
+
+            balance_label = mdata.obs[balance_label_key]
+            ctab = pd.crosstab(is_unlabel, balance_label, margins=True)
+            self._ctab_balance = (
+                (ctab * (n_balance / ctab.loc["All", :].values))
+                .round(0)
+                .astype(int)
+            )
+            size_label, size_unlabel = (
+                self._ctab_balance.iloc[:-1, :-1].sum(axis=1).tolist()
+            )
+
+            batch_array = mdata.obs[balance_label_key].values
+            batch_unique = np.unique(batch_array)
+            self._indices_dict = {"label": {}, "unlabel": {}}
+            for batchi in batch_unique:
+                batch_mask = batch_array == batchi
+                self._indices_dict["label"][batchi] = np.nonzero(
+                    batch_mask & (~is_unlabel)
+                )[0]
+                self._indices_dict["unlabel"][batchi] = np.nonzero(
+                    batch_mask & (is_unlabel)
+                )[0]
+        else:
+            # label样本的indices
+            self._indices_unlabel = np.nonzero(is_unlabel)[0]
+            # unlabel的indices
+            self._indices_label = np.nonzero(np.logical_not(is_unlabel))[0]
+            # label样本的数量
+            size_unlabel = self._indices_unlabel.shape[0]
+            # unlabel样本的数量
+            size_label = self._indices_label.shape[0]
+
+        if drop_last:
+            self._num_batch_unlabel = size_unlabel // self._unlabel_bs
+            self._num_batch_label = size_label // self._label_bs
+        else:
+            self._num_batch_unlabel = (
+                size_unlabel + self._unlabel_bs - 1
+            ) // self._unlabel_bs
+            self._num_batch_label = (
+                size_label + self._label_bs - 1
+            ) // self._label_bs
+        self._num_batch = max(self._num_batch_label, self._num_batch_unlabel)
+
+    def _iter_wo_balance(self):
+        inds_l = self._indices_label.copy()
+        inds_u = self._indices_unlabel.copy()
+
+        for i in range(self._num_batch):
+            if i == 0 and self._shuffle:
+                np.random.shuffle(inds_l)
+                np.random.shuffle(inds_u)
+
+            if i < self._num_batch_label:
+                batch_l = inds_l[
+                    (i * self._label_bs) : ((i + 1) * self._label_bs)
+                ]
+            elif self._repeat_sample:
+                li = i % self._num_batch_label
+                if li == 0 and self._shuffle:
+                    np.random.shuffle(inds_l)
+                batch_l = inds_l[
+                    (li * self._label_bs) : ((li + 1) * self._label_bs)
+                ]
+            else:
+                # NOTE: 不能用[]，np.r_依然可以工作，但是会默认将dtype从int转换为
+                # float，其作为index在getitem利用时会失效
+                batch_l = np.array([], dtype=int)
+
+            if i < self._num_batch_unlabel:
+                batch_u = inds_u[
+                    (i * self._unlabel_bs) : ((i + 1) * self._unlabel_bs)
+                ]
+            elif self._repeat_sample:
+                ui = i % self._num_batch_unlabel
+                if ui == 0 and self._shuffle:
+                    np.random.shuffle(inds_u)
+                batch_u = inds_u[
+                    (ui * self._unlabel_bs) : ((ui + 1) * self._unlabel_bs)
+                ]
+            else:
+                batch_u = np.array([], dtype=int)
+
+            yield np.r_[batch_l, batch_u]
+
+    def _iter_w_balance(self):
+        # 根据ctab_balance从indices_dict中进行采样，组成初始的indices
+        # label
+        self._indices_label = []
+        for k, indices_k in self._indices_dict["label"].items():
+            target_size = self._ctab_balance.loc[False, k]
+            if target_size > 0:
+                self._indices_label.append(
+                    np.random.choice(indices_k, target_size, replace=True)
+                )
+        self._indices_label = np.concatenate(self._indices_label)
+
+        self._indices_unlabel = []
+        for k, indices_k in self._indices_dict["unlabel"].items():
+            target_size = self._ctab_balance.loc[True, k]
+            if target_size > 0:
+                self._indices_unlabel.append(
+                    np.random.choice(indices_k, target_size, replace=True)
+                )
+        self._indices_unlabel = np.concatenate(self._indices_unlabel)
+
+        for batch in self._iter_wo_balance():
+            yield batch
+
+    def __iter__(self):
+        if self._balance_label_key is None:
+            return self._iter_wo_balance()
+        else:
+            return self._iter_w_balance()
+
+    def __len__(self):
+        return self._num_batch
 
 
 class GraphDataLoader:
@@ -567,109 +694,6 @@ class ParallelDataLoader:
         return res
 
 
-# class SemiSupervisedSampler:
-
-#     """
-#     为半监督生成batch，
-#         保证每个batch都包含足够的unlabel和labeled样本。
-#         他们两者是分别采样，然后放在一起的。
-#         其总批次数量=批次数量较大的那个
-
-#     需要同时控制random和np.random的随机性
-#     """
-
-#     def __init__(
-#         self,
-#         is_labeled: np.ndarray,
-#         unlabel_batch_size: int,
-#         labeled_batch_size: int,
-#         resample_size: Optional[dict[str, float]] = None,
-#         blabels: Optional[np.ndarray] = None,
-#         drop_last: bool = True,
-#     ) -> None:
-#         self._is_labeled = is_labeled
-#         self._ubs = unlabel_batch_size
-#         self._lbs = labeled_batch_size
-#         self._flag_resample = resample_size is not None
-#         self._dl = drop_last
-
-#         if self._flag_resample:
-#             assert blabels is not None
-#             self._balance_sampler = BalanceSizeSampler(resample_size,
-#                                                        blabels)
-#             self.n = len(self._balance_sampler)
-#             # TODO: 为了让第一个epoch也有length，但是可能不准
-#             index = self._balance_sampler._get_index()
-#             is_labeled_re = self._is_labeled[index]
-#             n_l = is_labeled_re.sum()
-#             n_u = self.n - n_l
-#             if self._dl:
-#                 self.nb_l = n_l // self._lbs
-#                 self.nb_u = n_u // self._ubs
-#             else:
-#                 self.nb_l = (n_l + self._lbs - 1) // self._lbs
-#                 self.nb_u = (n_u + self._ubs - 1) // self._ubs
-#             self.nb = max(self.nb_l, self.nb_u)
-#         else:
-#             self.n = self._is_labeled.shape[0]
-#             self.n_l = self._is_labeled.sum()
-#             self.n_u = self.n - self.n_l
-#             if drop_last:
-#                 self.nb_l = self.n_l // self._lbs
-#                 self.nb_u = self.n_u // self._ubs
-#             else:
-#                 self.nb_l = (self.n_l + self._lbs - 1) // self._lbs
-#                 self.nb_u = (self.n_u + self._ubs - 1) // self._ubs
-#             self.nb = max(self.nb_l, self.nb_u)
-
-#             self.inds_l = np.nonzero(self._is_labeled)[0]
-#             self.inds_u = np.nonzero(np.logical_not(self._is_labeled))[0]
-
-#     def _iter_wo_resample(self):
-#         inds_l = self.inds_l.copy()
-#         inds_u = self.inds_u.copy()
-
-#         for i in range(self.nb):
-#             li, ui = i % self.nb_l, i % self.nb_u
-#             if li == 0:
-#                 np.random.shuffle(inds_l)
-#             if ui == 0:
-#                 np.random.shuffle(inds_u)
-
-#             batch_l = inds_l[(li * self._lbs) : ((li + 1) * self._lbs)]
-#             batch_u = inds_u[(ui * self._ubs) : ((ui + 1) * self._ubs)]
-
-#             yield np.r_[batch_l, batch_u]
-
-#     def _iter_w_resample(self):
-#         index = self._balance_sampler._get_index()
-#         is_labeled_re = self._is_labeled[index]
-#         n_l = is_labeled_re.sum()
-#         n_u = self.n - n_l
-#         if self._dl:
-#             self.nb_l = n_l // self._lbs
-#             self.nb_u = n_u // self._ubs
-#         else:
-#             self.nb_l = (n_l + self._lbs - 1) // self._lbs
-#             self.nb_u = (n_u + self._ubs - 1) // self._ubs
-#         self.nb = max(self.nb_l, self.nb_u)
-
-#         self.inds_l = np.nonzero(is_labeled_re)[0]
-#         self.inds_u = np.nonzero(np.logical_not(is_labeled_re))[0]
-
-#         for batch in self._iter_wo_resample():
-#             yield [index[i] for i in batch]
-
-#     def __iter__(self):
-#         if self._flag_resample:
-#             return self._iter_w_resample()
-#         else:
-#             return self._iter_wo_resample()
-
-#     def __len__(self):
-#         return self.nb
-
-
 def get_dataloader(
     mdata: MuData,
     input_key: Optional[str] = "log1p_norm",
@@ -688,11 +712,15 @@ def get_dataloader(
     graph_data_phase: Literal["train", "test"] = "train",
     resample_size: Optional[int] = None,
     balance_sample_size: Optional[Union[str, int]] = None,
+    label_ratio: float = 0.2,
+    repeat_sample: bool = True,
 ) -> Union[D.DataLoader, ParallelDataLoader]:
     """
     resample_size: 随机重新采样的数量，如果是None则不进行重采样，用在differential
-    balance_sample_size: 指定每个批次的采样数量，目的是在训练时平衡批次的样本数量
-    两者不能一起设置
+    balance_sample_size: 指定每个批次的采样数量，目的是在训练时平衡批次的样本数量。
+        如果其为None，则表示不进行balance_sample_size。
+        resample_size 和 balance_sample_size不能同时开启!!!
+    graph_data_phase: 如果是test，则每个批次只返回完整的normed graph.
     """
     assert (resample_size is None) or (
         balance_sample_size is None
@@ -706,7 +734,30 @@ def get_dataloader(
         dlabel_key=dlabel_key,
         sslabel_key=sslabel_key,
     )
-    if resample_size is None and balance_sample_size is None:
+    if sslabel_key is not None:
+        # 应该使用SemiBatchSampler
+        sssampler = SemiSupervisedSampler(
+            mdata,
+            sslabel_key,
+            batch_size=batch_size,
+            label_ratio=label_ratio,
+            shuffle=shuffle,
+            repeat_sample=repeat_sample,
+            # 如果balance_sample_size为None，则表示不进行balance sampling。但是
+            #   在SemiSupervisedSampler中，控制是否进行balance sampling是通过
+            #   balance_label_key来控制的。
+            balance_label_key=(
+                None if balance_sample_size is None else batch_key
+            ),
+            balance_sample_size=balance_sample_size,
+        )
+        mdataloader = D.DataLoader(
+            mdataset,
+            batch_sampler=sssampler,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+        )
+    elif resample_size is None and balance_sample_size is None:
         mdataloader = D.DataLoader(
             mdataset,
             batch_size=batch_size,

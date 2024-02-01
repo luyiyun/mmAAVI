@@ -85,7 +85,7 @@ class MMAAVI:
         # graph_decoder_whole: bool = False,
         temperature: float = 1.0,
         disc_gradient_weight: float = 1.0,
-        label_smooth: float = 0.0,
+        label_smooth: float = 0.1,
         focal_alpha: float = 2.0,
         focal_gamma: float = 1.0,
         mix_dec_dot_weight: float = 0.9,
@@ -99,6 +99,7 @@ class MMAAVI:
         # TODO: drop_last?
         balance_sample: Optional[Union[str, int]] = None,
         batch_size: Optional[int] = None,
+        ss_label_ratio: float = 0.2,
         num_workers: int = 0,
         pin_memory: bool = True,
         net_key: Optional[str] = None,
@@ -122,6 +123,12 @@ class MMAAVI:
         early_stop_patient: int = 10,
         tensorboard_dir: Optional[str] = None,
         verbose: int = 2,
+        loss_weight_kl_omics: float = 1.0,
+        loss_weight_rec_omics: float = 1.0,
+        loss_weight_kl_graph: float = 0.01,
+        loss_weight_rec_graph: Tuple[float, str] = "nomics",
+        loss_weight_disc: float = 1.0,
+        loss_weight_sup: float = 1.0,
     ):
         if mixture_embeddings:
             assert isinstance(dim_c, int) and dim_c > 1, (
@@ -153,6 +160,7 @@ class MMAAVI:
         self.graph_batch_size_ = graph_batch_size
         self.drop_self_loop_ = drop_self_loop
         self.num_negative_samples_ = num_negative_samples
+        self.ss_label_ratio_ = ss_label_ratio
 
         self.mixture_embeddings_ = mixture_embeddings
         self.decoder_style_ = decoder_style
@@ -211,6 +219,13 @@ class MMAAVI:
         self.tensorboard_dir_ = tensorboard_dir
         self.verbose_ = verbose
 
+        self.loss_weight_kl_omics_ = loss_weight_kl_omics
+        self.loss_weight_rec_omics_ = loss_weight_rec_omics
+        self.loss_weight_kl_graph_ = loss_weight_kl_graph
+        self.loss_weight_rec_graph_ = loss_weight_rec_graph
+        self.loss_weight_disc_ = loss_weight_disc
+        self.loss_weight_sup_ = loss_weight_sup
+
     def fit(self, mdata: MuData, key_add: str = "mmAAVI") -> None:
         # TODO: 加更多提示信息
         # ======================= prepare dataset =======================
@@ -258,7 +273,9 @@ class MMAAVI:
             graph_batch_size=self.graph_batch_size_,
             drop_self_loop=self.drop_self_loop_,
             num_negative_samples=self.num_negative_samples_,
-            balance_sample_size=self.balance_sample_
+            balance_sample_size=self.balance_sample_,
+            label_ratio=self.ss_label_ratio_,
+            repeat_sample=True,
         )
         loader_valid = get_dataloader(
             mdata_valid,
@@ -275,6 +292,12 @@ class MMAAVI:
             graph_batch_size=self.graph_batch_size_,
             drop_self_loop=self.drop_self_loop_,
             num_negative_samples=self.num_negative_samples_,
+            label_ratio=self.ss_label_ratio_,
+            # 设置repeat_sample=False，valid时会重新组织batch让label和unlabel均衡，
+            # 但是不会重采样让labeled samples变多
+            repeat_sample=False,
+            balance_sample_size=None,  # valid时不进行平衡采样
+            # TODO: valid dataset是否还需要balanced sampler和semisupervised sampler
         )
 
         # ======================= prepare model =======================
@@ -335,6 +358,12 @@ class MMAAVI:
                 focal_alpha=self.focal_alpha_,
                 focal_gamma=self.focal_gamma_,
                 mix_dec_dot_weight=self.mix_dec_dot_weight_,
+                loss_weight_kl_omics=self.loss_weight_kl_omics_,
+                loss_weight_rec_omics=self.loss_weight_rec_omics_,
+                loss_weight_kl_graph=self.loss_weight_kl_graph_,
+                loss_weight_rec_graph=self.loss_weight_rec_graph_,
+                loss_weight_disc=self.loss_weight_disc_,
+                loss_weight_sup=self.loss_weight_sup_,
             )
 
         # ======================= training model =======================
@@ -369,7 +398,9 @@ class MMAAVI:
             output_key=self.output_key_,
             batch_key=batch_code_key,
             dlabel_key=self.dlabel_key_,
-            sslabel_key=sslabel_code_key,
+            # 计算embeddings不需要label，加了这个sslabel_key会导致使用
+            # SemisupervisedSampler，使顺序出现问题
+            sslabel_key=None,  # sslabel_code_key,
             batch_size=self.batch_size_,
             shuffle=False,
             num_workers=self.num_workers_,
@@ -378,7 +409,6 @@ class MMAAVI:
             graph_batch_size=self.graph_batch_size_,
             drop_self_loop=self.drop_self_loop_,
             num_negative_samples=self.num_negative_samples_,
-            graph_data_phase="test",
         )
         enc_res = self.trainer_.encode(
             loader_all_, device=self.device_, verbose=self.verbose_
@@ -436,7 +466,7 @@ class MMAAVI:
         )
 
         # encode the sslabel as integer codes, nan as -1
-        sslabel_code_key = None  # TODO: differential时用不到sslabel
+        # sslabel_code_key = None  # TODO: differential时用不到sslabel
         # if self.sslabel_key_ is not None:
         #     sslabel_array_key = merge_obs_from_all_modalities(
         #         mdata, self.sslabel_key_
@@ -491,7 +521,7 @@ class MMAAVI:
                 output_key=self.output_key_,
                 batch_key=batch_code_key,
                 dlabel_key=self.dlabel_key_,
-                sslabel_key=sslabel_code_key,
+                sslabel_key=None,  # sslabel_code_key, 重构不需要标签的参与
                 batch_size=self.batch_size_,
                 # shuffle=False,
                 num_workers=self.num_workers_,
@@ -509,7 +539,7 @@ class MMAAVI:
                 output_key=self.output_key_,
                 batch_key=batch_code_key,
                 dlabel_key=self.dlabel_key_,
-                sslabel_key=sslabel_code_key,
+                sslabel_key=None,  # sslabel_code_key, 重构不需要标签的参与
                 batch_size=self.batch_size_,
                 # shuffle=False,
                 num_workers=self.num_workers_,

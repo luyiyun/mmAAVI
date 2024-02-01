@@ -10,7 +10,7 @@ import logging
 # import torch
 import numpy as np
 import mudata as md
-import scanpy as sc
+# import scanpy as sc
 from mmAAVI import MMAAVI
 from mmAAVI.preprocess import merge_obs_from_all_modalities
 
@@ -42,23 +42,23 @@ model = MMAAVI(
 model.fit(mdata)
 mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)
 
-sc.pp.neighbors(mdata, use_rep="mmAAVI_z")
-sc.tl.leiden(mdata, resolution=0.1, key_added="leiden")
+# sc.pp.neighbors(mdata, use_rep="mmAAVI_z")
+# sc.tl.leiden(mdata, resolution=0.1, key_added="leiden")
 
-model.differential(mdata, "leiden")
+# model.differential(mdata, "leiden")
 
-sc.tl.umap(mdata, min_dist=0.2)
-# convert categorical
-mdata.obs["batch"] = mdata.obs["batch"].astype("category")
-mdata.obs["mmAAVI_c_label"] = mdata.obs["mmAAVI_c_label"].astype("category")
-# plot and save umap
-fig_umap = sc.pl.umap(
-    mdata,
-    color=["batch", "coarse_cluster", "mmAAVI_c_label", "leiden"],
-    ncols=2,
-    return_fig=True,
-)
-fig_umap.savefig(osp.join(res_dir, "umap.png"))
+# sc.tl.umap(mdata, min_dist=0.2)
+# # convert categorical
+# mdata.obs["batch"] = mdata.obs["batch"].astype("category")
+# mdata.obs["mmAAVI_c_label"] = mdata.obs["mmAAVI_c_label"].astype("category")
+# # plot and save umap
+# fig_umap = sc.pl.umap(
+#     mdata,
+#     color=["batch", "coarse_cluster", "mmAAVI_c_label", "leiden"],
+#     ncols=2,
+#     return_fig=True,
+# )
+# fig_umap.savefig(osp.join(res_dir, "umap.png"))
 
 # ipdb.set_trace()
 # data_dir = "./res/1_pp/"

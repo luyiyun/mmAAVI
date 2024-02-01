@@ -24,6 +24,7 @@ data_dir, res_dir = "./data/", "./res/"
 os.makedirs(res_dir, exist_ok=True)
 
 mdata = md.read(osp.join(data_dir, "pbmc.h5mu"))
+print(mdata)
 merge_obs_from_all_modalities(mdata, key="coarse_cluster")
 merge_obs_from_all_modalities(mdata, key="batch")
 batch1_indices = np.nonzero(mdata.obs["batch"] == 1)[0]
@@ -38,9 +39,11 @@ model = MMAAVI(
     net_key="net",
     balance_sample="max",
     num_workers=4,
+    max_epochs=2
 )
 model.fit(mdata)
-mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)
+print(mdata)
+# mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)
 
 # sc.pp.neighbors(mdata, use_rep="mmAAVI_z")
 # sc.tl.leiden(mdata, resolution=0.1, key_added="leiden")

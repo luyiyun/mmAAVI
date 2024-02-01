@@ -80,7 +80,7 @@ class MMAAVI:
         spectral_norm: bool = False,
         input_with_batch: bool = False,
         reduction: str = "sum",
-        semi_supervised: bool = False,
+        # semi_supervised: bool = False,
         graph_encoder_init_zero: bool = True,
         # graph_decoder_whole: bool = False,
         temperature: float = 1.0,
@@ -130,6 +130,7 @@ class MMAAVI:
         loss_weight_disc: float = 1.0,
         loss_weight_sup: float = 1.0,
     ):
+        # TODO: add docstring!
         if mixture_embeddings:
             assert isinstance(dim_c, int) and dim_c > 1, (
                 "dim_c must be an integer than greater than 1 "
@@ -192,7 +193,7 @@ class MMAAVI:
         self.spectral_norm_ = spectral_norm
         self.input_with_batch_ = input_with_batch
         self.reduction_ = reduction
-        self.semi_supervised_ = semi_supervised
+        # self.semi_supervised_ = semi_supervised
         self.graph_encoder_init_zero_ = graph_encoder_init_zero
         self.temperature_ = temperature
         self.disc_gradient_weight_ = disc_gradient_weight

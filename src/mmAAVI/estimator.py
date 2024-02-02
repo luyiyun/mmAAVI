@@ -17,6 +17,7 @@ from .dataset import get_dataloader, GraphDataLoader
 from .network import MMAAVINET
 from .trainer import Trainer
 from .train_utils.utils import tensors_to_device
+from .utils import setup_seed
 
 
 EPS = 1e-7
@@ -71,7 +72,7 @@ class MMAAVI:
         dp: float = 0.2,
         disc_bn: Optional[bool] = True,
         disc_condi_train: Optional[str] = None,
-        disc_on_mean: bool = False,
+        disc_on_mean: bool = True,
         disc_criterion: Literal["ce", "bce", "focal"] = "ce",
         c_reparam: bool = True,
         c_prior: Optional[Sequence[float]] = None,
@@ -123,6 +124,7 @@ class MMAAVI:
         early_stop_patient: int = 10,
         tensorboard_dir: Optional[str] = None,
         verbose: int = 2,
+        deterministic: bool = False,  # True for reproducibility
         loss_weight_kl_omics: float = 1.0,
         loss_weight_rec_omics: float = 1.0,
         loss_weight_kl_graph: float = 0.01,
@@ -146,7 +148,7 @@ class MMAAVI:
         if decoder_style != "mlp":
             assert net_key is not None, "if not mlp, please give network."
 
-        self.seed_ = seed  # TODO: 设置全局种子
+        self.seed_ = seed
         self.valid_size_ = valid_size
         self.input_key_ = input_key
         self.output_key_ = output_key
@@ -193,7 +195,7 @@ class MMAAVI:
         self.spectral_norm_ = spectral_norm
         self.input_with_batch_ = input_with_batch
         self.reduction_ = reduction
-        # self.semi_supervised_ = semi_supervised
+        self.semi_supervised_ = sslabel_key is not None
         self.graph_encoder_init_zero_ = graph_encoder_init_zero
         self.temperature_ = temperature
         self.disc_gradient_weight_ = disc_gradient_weight
@@ -219,6 +221,7 @@ class MMAAVI:
         self.early_stop_patient_ = early_stop_patient
         self.tensorboard_dir_ = tensorboard_dir
         self.verbose_ = verbose
+        self.deterministic_ = deterministic
 
         self.loss_weight_kl_omics_ = loss_weight_kl_omics
         self.loss_weight_rec_omics_ = loss_weight_rec_omics
@@ -228,6 +231,10 @@ class MMAAVI:
         self.loss_weight_sup_ = loss_weight_sup
 
     def fit(self, mdata: MuData, key_add: str = "mmAAVI") -> None:
+        # ======================= control random =======================
+        if self.seed_ is not None:
+            setup_seed(self.seed_, self.deterministic_)
+
         # TODO: 加更多提示信息
         # ======================= prepare dataset =======================
         # encode the batch label as integer codes
@@ -350,7 +357,7 @@ class MMAAVI:
                 spectral_norm=self.spectral_norm_,
                 input_with_batch=self.input_with_batch_,
                 reduction=self.reduction_,
-                semi_supervised=self.semi_supervised_,
+                # semi_supervised=self.semi_supervised_,
                 graph_encoder_init_zero=self.graph_encoder_init_zero_,
                 # graph_decoder_whole=self.graph_decoder_whole_,
                 temperature=self.temperature_,

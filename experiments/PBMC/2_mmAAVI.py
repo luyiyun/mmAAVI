@@ -1,22 +1,16 @@
 import os
 import os.path as osp
 
-# import sys
-# import time
 import logging
 
-# from typing import Optional, Sequence, Union
-
 # import torch
-import numpy as np
+# import numpy as np
 import mudata as md
-# import scanpy as sc
+import scanpy as sc
 from mmAAVI import MMAAVI
 from mmAAVI.preprocess import merge_obs_from_all_modalities
+# from scib_metrics.benchmark import Benchmarker
 
-# from mmAAVI.dataset import MosaicData
-# from mmAAVI.model import MMAAVI
-# from mmAAVI.utils import save_json, setup_seed
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,14 +18,14 @@ data_dir, res_dir = "./data/", "./res/"
 os.makedirs(res_dir, exist_ok=True)
 
 mdata = md.read(osp.join(data_dir, "pbmc.h5mu"))
-print(mdata)
 merge_obs_from_all_modalities(mdata, key="coarse_cluster")
 merge_obs_from_all_modalities(mdata, key="batch")
-batch1_indices = np.nonzero(mdata.obs["batch"] == 1)[0]
-label_indices = np.random.choice(batch1_indices, 100, replace=False)
-ss_label = np.full(mdata.n_obs, np.NaN, dtype=object)
-ss_label[label_indices] = mdata.obs["coarse_cluster"].iloc[label_indices]
-mdata.obs["semisup_label"] = ss_label
+print(mdata)
+# batch1_indices = np.nonzero(mdata.obs["batch"] == 1)[0]
+# label_indices = np.random.choice(batch1_indices, 100, replace=False)
+# ss_label = np.full(mdata.n_obs, np.NaN, dtype=object)
+# ss_label[label_indices] = mdata.obs["coarse_cluster"].iloc[label_indices]
+# mdata.obs["semisup_label"] = ss_label
 
 model = MMAAVI(
     input_key="log1p_norm",
@@ -39,30 +33,31 @@ model = MMAAVI(
     net_key="net",
     balance_sample="max",
     num_workers=4,
-    max_epochs=2
+    hiddens_enc_c=(100, 50),
 )
 model.fit(mdata)
-print(mdata)
-# mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)
+mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)
 
-# sc.pp.neighbors(mdata, use_rep="mmAAVI_z")
-# sc.tl.leiden(mdata, resolution=0.1, key_added="leiden")
+sc.pp.neighbors(mdata, use_rep="mmAAVI_z")
+sc.tl.leiden(mdata, resolution=0.1, key_added="leiden")
 
-# model.differential(mdata, "leiden")
+model.differential(mdata, "leiden")
 
-# sc.tl.umap(mdata, min_dist=0.2)
-# # convert categorical
-# mdata.obs["batch"] = mdata.obs["batch"].astype("category")
-# mdata.obs["mmAAVI_c_label"] = mdata.obs["mmAAVI_c_label"].astype("category")
-# # plot and save umap
-# fig_umap = sc.pl.umap(
-#     mdata,
-#     color=["batch", "coarse_cluster", "mmAAVI_c_label", "leiden"],
-#     ncols=2,
-#     return_fig=True,
-# )
-# fig_umap.savefig(osp.join(res_dir, "umap.png"))
+sc.tl.umap(mdata, min_dist=0.2)
+# convert categorical
+mdata.obs["batch"] = mdata.obs["batch"].astype("category")
+mdata.obs["mmAAVI_c_label"] = mdata.obs["mmAAVI_c_label"].astype("category")
+# plot and save umap
+fig_umap = sc.pl.umap(
+    mdata,
+    color=["batch", "coarse_cluster", "mmAAVI_c_label", "leiden"],
+    ncols=2,
+    return_fig=True,
+)
+fig_umap.savefig(osp.join(res_dir, "umap.png"))
+mdata.write(osp.join(res_dir, "pbmc_res.h5mu"))
 
+# ------------ 测试 ------------
 # ipdb.set_trace()
 # data_dir = "./res/1_pp/"
 # res_dir = "./res/2_mmAAVI/"

@@ -31,6 +31,18 @@ dependencies = [
   # "adjustText==0.8",
 ]
 dynamic = ["version"]
+[project.optional-dependencies]
+develop = [
+    "ipdb>=0.13.13",
+    "pytest",
+    "scib-metrics",
+    "seaborn",
+    "scanpy",
+    "colorcet",
+    "scib",
+    "scmomat",
+    "git+https://github.com/Teichlab/MultiMAP.git",
+]
 
 [tool.setuptools.packages]
 find = {where = ["src"], namespaces = true}  # namespaces=false will prevent any folder without an __init__.py file

@@ -126,7 +126,8 @@ class MosaicMuDataset(D.Dataset):
         row = self._mdata[index, :]
         inpts, outputs, mask = {}, {}, {}
         for k, row_ann in row.mod.items():
-            mask[k] = self._mdata.obsm[k][index]
+            # 使用bool将np.bool_转换，避免deprecated warning
+            mask[k] = bool(self._mdata.obsm[k][index])
             # NOTE: row_ann的n_obs为0并不能证明这个组学缺失，还有可能是因为这个组学
             # 的count就是0，正确的做法是通过mudata的obsm["OMIC_NAME"][i]来判断
             if row_ann.n_obs == 0:

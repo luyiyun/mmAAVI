@@ -98,7 +98,9 @@ class MMAAVI:
         dlabel_key: Optional[str] = None,
         sslabel_key: Optional[str] = None,
         # TODO: drop_last?
-        balance_sample: Optional[Union[str, int]] = None,
+        balance_sample: Optional[
+            Union[Literal["max", "min", "mean"], int]
+        ] = None,
         batch_size: Optional[int] = None,
         ss_label_ratio: float = 0.2,
         num_workers: int = 0,

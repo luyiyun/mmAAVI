@@ -4,12 +4,23 @@ import os
 import pickle
 import random
 from functools import wraps
+from time import perf_counter
 from typing import Sequence, List, Union
 
 import numpy as np
 import pandas as pd
 import torch
 import scipy.sparse as sp
+
+
+class Timer:
+
+    def __enter__(self):
+        self._t1 = perf_counter()
+        return self
+
+    def __exit__(self, a, b, c):
+        self.duration = perf_counter() - self._t1
 
 
 def merge_multi_obs_cols(arrs: List[np.ndarray]) -> np.ndarray:

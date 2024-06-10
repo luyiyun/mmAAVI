@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--preproc_data_dir", default="./res")
     parser.add_argument("--preproc_data_name", default="pbmc")
     parser.add_argument("--results_dir", default="./res")
+    parser.add_argument("--results_name", default="pbmc_decide_num_clusters")
     parser.add_argument("--no_timming", action="store_true")
     parser.add_argument(
         "--num_clusters", default=list(range(3, 11)), type=int, nargs="+"
@@ -110,7 +111,7 @@ def main():
     # ========================================================================
     # save the training results
     # ========================================================================
-    mdata.write(osp.join(args.results_dir, "pbmc_decide_num_clusters.h5mu"))
+    mdata.write(osp.join(args.results_dir, f"{args.results_name}.h5mu"))
 
     # ========================================================================
     # plot the valid metric loss
@@ -128,12 +129,12 @@ def main():
     ax2.set_ylabel(r"$\mu+\sigma$", color=color2)
     ax2.tick_params(axis="y", labelcolor=color2)
     fg.tight_layout()
-    fg.savefig(osp.join(args.results_dir, "pbmc_decide_num_clusters.pdf"))
+    fg.savefig(osp.join(args.results_dir, f"{args.results_name}.pdf"))
     fg.savefig(
-        osp.join(args.results_dir, "pbmc_decide_num_clusters.png"), dpi=300
+        osp.join(args.results_dir, f"{args.results_name}.png"), dpi=300
     )
     fg.savefig(
-        osp.join(args.results_dir, "pbmc_decide_num_clusters.tiff"), dpi=300
+        osp.join(args.results_dir, f"{args.results_name}.tiff"), dpi=300
     )
 
 

@@ -9,6 +9,7 @@ import pandas as pd
 import mudata as md
 from mmAAVI import MMAAVI
 from mmAAVI.preprocess import merge_obs_from_all_modalities
+from mmAAVI.utils import setup_seed
 import seaborn as sns
 
 
@@ -60,22 +61,20 @@ def main():
             key_add = f"mmAAVI_nc{nc}_s{seedi}"
             # set random seed
             # deterministic保证重复性，但是性能慢两倍
-            # setup_seed(seedi, deterministic=True)
-            # set path which contains model and results
-            # save_dir_i = osp.join(save_dir, str(seedi))
-            # os.makedirs(save_dir_i, exist_ok=True)
-            # print(save_dir)
+            setup_seed(seedi, deterministic=True)
 
             model = MMAAVI(
                 dim_c=nc,
                 input_key="log1p_norm",
                 net_key="net",
-                # balance_sample="max",
+                balance_sample="max",
                 num_workers=4,
-                hiddens_enc_c=(100, 50),
+                # hiddens_enc_c=(100, 50),
                 seed=seedi,
                 deterministic=True,
                 max_epochs=args.max_epochs,
+                # mix_dec_dot_weight=0.5,
+                disc_gradient_weight=20.
             )
             if timing:
                 t1 = perf_counter()

@@ -89,7 +89,8 @@ class MMAAVI:
         label_smooth: float = 0.1,
         focal_alpha: float = 2.0,
         focal_gamma: float = 1.0,
-        mix_dec_dot_weight: float = 0.9,
+        # 0.9 for overlapped, 0.99 for diagonal integration
+        mix_dec_dot_weight: Optional[float] = None,
         seed: Optional[int] = 0,
         valid_size: Tuple[int, float] = 0.1,
         input_key: Optional[str] = None,
@@ -233,6 +234,16 @@ class MMAAVI:
         self.loss_weight_sup_ = loss_weight_sup
 
     def fit(self, mdata: MuData, key_add: str = "mmAAVI") -> None:
+        if self.mix_dec_dot_weight_ is None:
+            # set the value by the format of mdata
+            flag_overlap = False
+            for on1, on2 in combinations(mdata.mod.keys(), 2):
+                # samples with overlapped omics more than 10
+                if (mdata.obsm[on1] & mdata.obsm[on2]).sum() > 10:
+                    flag_overlap = True
+                    break
+            self.mix_dec_dot_weight_ = 0.9 if flag_overlap else 0.99
+
         # ======================= control random =======================
         if self.seed_ is not None:
             setup_seed(self.seed_, self.deterministic_)
@@ -260,6 +271,7 @@ class MMAAVI:
             test_size=self.valid_size_,
             random_state=self.seed_,
         )
+        # TODO: copy will change the order of samples !!!!!!
         mdata_train = mdata[train_index, :].copy()
         mdata_valid = mdata[valid_index, :].copy()
 

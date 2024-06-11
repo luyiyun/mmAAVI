@@ -53,7 +53,7 @@ class MMAAVI:
         disc_alignment: bool = True,
         dim_z: int = 30,
         dim_u: int = 30,
-        dim_c: int = 6,
+        dim_c: Optional[int] = None,
         dim_enc_middle: int = 200,
         hiddens_enc_unshared: Sequence[int] = (256, 256),
         hiddens_enc_z: Sequence[int] = (256,),
@@ -85,7 +85,7 @@ class MMAAVI:
         graph_encoder_init_zero: bool = True,
         # graph_decoder_whole: bool = False,
         temperature: float = 1.0,
-        disc_gradient_weight: float = 1.0,
+        disc_gradient_weight: float = 20.0,
         label_smooth: float = 0.1,
         focal_alpha: float = 2.0,
         focal_gamma: float = 1.0,
@@ -101,7 +101,7 @@ class MMAAVI:
         # TODO: drop_last?
         balance_sample: Optional[
             Union[Literal["max", "min", "mean"], int]
-        ] = None,
+        ] = "max",
         batch_size: Optional[int] = None,
         ss_label_ratio: float = 0.2,
         num_workers: int = 0,
@@ -136,7 +136,7 @@ class MMAAVI:
         loss_weight_sup: float = 1.0,
     ):
         # TODO: add docstring!
-        if mixture_embeddings:
+        if sslabel_key is None and mixture_embeddings:
             assert isinstance(dim_c, int) and dim_c > 1, (
                 "dim_c must be an integer than greater than 1 "
                 "when mixture_embeddings=True"
@@ -150,6 +150,10 @@ class MMAAVI:
             ), "valid_size must be in [0, 1]"
         if decoder_style != "mlp":
             assert net_key is not None, "if not mlp, please give network."
+        if sslabel_key is not None:
+            assert (
+                mixture_embeddings
+            ), "if semi-supervised learning, mixture_embeddings must be true."
 
         self.seed_ = seed
         self.valid_size_ = valid_size
@@ -265,6 +269,16 @@ class MMAAVI:
         else:
             sslabel_code_key = None
 
+        # if dim_c is None and semi-supervised learning, auto determinate it
+        if sslabel_code_key is not None:
+            if self.dim_c_ is None:
+                self.dim_c_ = len(self.sslabel_enc_.classes_)
+            else:
+                assert self.dim_c_ >= len(self.sslabel_enc_.classes_), (
+                    "dim_c must be greater than the number of cell types "
+                    "in sslabels when semi-supervised learning."
+                )
+
         # split the dataset to train and valid
         train_index, valid_index = train_test_split(
             np.arange(mdata.n_obs),
@@ -298,6 +312,7 @@ class MMAAVI:
             balance_sample_size=self.balance_sample_,
             label_ratio=self.ss_label_ratio_,
             repeat_sample=True,
+            drop_last=True,
         )
         loader_valid = get_dataloader(
             mdata_valid,
@@ -320,6 +335,7 @@ class MMAAVI:
             repeat_sample=False,
             balance_sample_size=None,  # valid时不进行平衡采样
             # TODO: valid dataset是否还需要balanced sampler和semisupervised sampler
+            drop_last=False,
         )
 
         # ======================= prepare model =======================
@@ -371,7 +387,7 @@ class MMAAVI:
                 spectral_norm=self.spectral_norm_,
                 input_with_batch=self.input_with_batch_,
                 reduction=self.reduction_,
-                # semi_supervised=self.semi_supervised_,
+                semi_supervised=self.semi_supervised_,
                 graph_encoder_init_zero=self.graph_encoder_init_zero_,
                 # graph_decoder_whole=self.graph_decoder_whole_,
                 temperature=self.temperature_,
@@ -437,6 +453,13 @@ class MMAAVI:
         )
         for k, t in enc_res.items():
             mdata.obsm[f"{key_add}_{k}"] = t.detach().cpu().numpy()
+
+        # if semi-spuervised learning, get the label predict in obs
+        if self.sslabel_key_ is not None:
+            proba = mdata.obsm[f"{key_add}_c"]
+            pred_int = proba.argmax(axis=1)
+            pred = self.sslabel_enc_.inverse_transform(pred_int)
+            mdata.obs[f"{key_add}_ss_predict"] = pred
 
         # if mlp decoder，model doesn't have graph encoder and decoder
         if self.decoder_style_ == "mlp":

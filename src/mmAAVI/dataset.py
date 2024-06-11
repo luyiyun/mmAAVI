@@ -715,6 +715,7 @@ def get_dataloader(
     balance_sample_size: Optional[Union[str, int]] = None,
     label_ratio: float = 0.2,
     repeat_sample: bool = True,
+    drop_last: bool = False
 ) -> Union[D.DataLoader, ParallelDataLoader]:
     """
     resample_size: 随机重新采样的数量，如果是None则不进行重采样，用在differential
@@ -765,6 +766,7 @@ def get_dataloader(
             shuffle=shuffle,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            drop_last=drop_last
         )
     else:
         if resample_size is not None:
@@ -779,6 +781,7 @@ def get_dataloader(
             sampler=sampler,
             num_workers=num_workers,
             pin_memory=pin_memory,
+            drop_last=drop_last
         )
     if net_key is None:
         return mdataloader

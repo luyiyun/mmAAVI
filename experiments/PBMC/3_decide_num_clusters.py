@@ -69,12 +69,9 @@ def main():
                 net_key="net",
                 balance_sample="max",
                 num_workers=4,
-                # hiddens_enc_c=(100, 50),
                 seed=seedi,
                 deterministic=True,
                 max_epochs=args.max_epochs,
-                # mix_dec_dot_weight=0.5,
-                disc_gradient_weight=20.
             )
             if timing:
                 t1 = perf_counter()

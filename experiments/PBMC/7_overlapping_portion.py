@@ -1,6 +1,5 @@
 import os
 import os.path as osp
-import logging
 from time import perf_counter
 from argparse import ArgumentParser
 
@@ -33,9 +32,11 @@ def main():
     parser.add_argument("--num_cluster", default=8, type=int)
     parser.add_argument("--seeds", default=list(range(6)), type=int, nargs="+")
     parser.add_argument("--max_epochs", default=300, type=int)
+    parser.add_argument("--previous_results", default=None, type=str)
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    if args.previous_results is not None:
+        assert args.previous_results != args.results_name
 
     # ========================================================================
     # load preporcessed data
@@ -80,7 +81,7 @@ def main():
                 },
                 obs=mdata_rb.obs[[batch_name, label_name]].copy(),
                 var=mdata_rb.var.copy(),
-                varp=mdata_rb.varp.copy()
+                varp=mdata_rb.varp.copy(),
             )
         else:  # if remove all samples, then remove the whole omic data
             remain_var_ind = np.bitwise_not(mdata_rb.varm[args.remove_omic])
@@ -114,7 +115,7 @@ def main():
                 seed=seedi,
                 deterministic=True,
                 max_epochs=args.max_epochs,
-                device="cuda:1"
+                device="cuda:1",
             )
             if timing:
                 t1 = perf_counter()
@@ -163,6 +164,13 @@ def main():
     for k in res_adata.obsm.keys():
         if k.endswith("_z"):
             adata_plot.obsm[k] = res_adata.obsm[k]
+    if args.previous_results is not None:
+        previous_res_adata = ad.read(
+            osp.join(args.results_dir, f"{args.previous_results}.h5ad")
+        )
+        for k in previous_res_adata.obsm.keys():
+            if k.endswith("_z"):
+                adata_plot.obsm[f"p_{k}"] = previous_res_adata.obsm[k]
     # benchmarking
     embed_keys = list(adata_plot.obsm.keys())
     setup_seed(1234)

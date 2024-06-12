@@ -43,7 +43,7 @@ def main():
     parser.add_argument("--seeds", default=list(range(6)), type=int, nargs="+")
     parser.add_argument("--scmomat_device", default="cuda:0")
     parser.add_argument(
-        "--methods", default=("scmomat", "multimap"), nargs="+"
+        "--methods", default=("scmomat", "multimap", "uinmf"), nargs="+"
     )
     args = parser.parse_args()
 
@@ -193,6 +193,13 @@ def main():
             ]
 
         res_adata.uns["timing"] = {"MultiMap": res_timing}
+
+    # ========================================================================
+    # running multimap
+    # ========================================================================
+    if "uinmf" in args.methods:
+        pass
+
     # ========================================================================
     # save the results
     # ========================================================================

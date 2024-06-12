@@ -25,14 +25,14 @@ def main():
     )
     parser.add_argument(
         "--remove_batches",
-        default=("1", "1,2", "1,2,3", "1,2,3,4"),
+        default=("1", "1,3", "1,2,3", "1,2,3,4"),
         type=str,
         nargs="+",
     )
     parser.add_argument("--num_cluster", default=8, type=int)
     parser.add_argument("--seeds", default=list(range(6)), type=int, nargs="+")
     parser.add_argument("--max_epochs", default=300, type=int)
-    parser.add_argument("--previous_results", default=None, type=str)
+    parser.add_argument("--previous_results", default=(), type=str, nargs="*")
     args = parser.parse_args()
 
     if args.previous_results is not None:
@@ -116,6 +116,9 @@ def main():
                 deterministic=True,
                 max_epochs=args.max_epochs,
                 device="cuda:1",
+                mix_dec_dot_weight=(
+                    0.99 if len(rm_batches.split(",")) > 2 else 0.9
+                ),
             )
             if timing:
                 t1 = perf_counter()
@@ -164,13 +167,14 @@ def main():
     for k in res_adata.obsm.keys():
         if k.endswith("_z"):
             adata_plot.obsm[k] = res_adata.obsm[k]
-    if args.previous_results is not None:
-        previous_res_adata = ad.read(
-            osp.join(args.results_dir, f"{args.previous_results}.h5ad")
-        )
-        for k in previous_res_adata.obsm.keys():
-            if k.endswith("_z"):
-                adata_plot.obsm[f"p_{k}"] = previous_res_adata.obsm[k]
+    if args.previous_results:
+        for i, pre_res_name in enumerate(args.previous_results):
+            previous_res_adata = ad.read(
+                osp.join(args.results_dir, f"{pre_res_name}.h5ad")
+            )
+            for k in previous_res_adata.obsm.keys():
+                if k.endswith("_z"):
+                    adata_plot.obsm[f"p{i}-{k}"] = previous_res_adata.obsm[k]
     # benchmarking
     embed_keys = list(adata_plot.obsm.keys())
     setup_seed(1234)

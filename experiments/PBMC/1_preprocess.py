@@ -48,12 +48,12 @@ def create_mosaic_dataset(root: str) -> MuData:
         atac.append(adatai)
     atac = ad.concat(
         atac, axis=0, merge="same"
-    )  # same表示只保留数据集中相同的var columns
+    )  # "same" means only same var columns will be remained.
 
     # rna
     rna_names = np.loadtxt(osp.join(root, "genes.txt"), dtype="U")
     # use biothings_client to get the location of genes in chromosome
-    cache_url = "./mygene_cache.sqlite"
+    cache_url = "../mygene_cache.sqlite"
     gene_client = bc.get_client("gene")
     gene_client.set_caching(cache_url)
     gene_meta = gene_client.querymany(
@@ -120,7 +120,7 @@ def create_mosaic_dataset(root: str) -> MuData:
     rna_df["strand"] = rna_df.strand.replace({1.0: "+", -1.0: "-"}).fillna("+")
     rna_df["chromStart"] = rna_df.chromStart.fillna(0.0)
     rna_df["chromEnd"] = rna_df.chromEnd.fillna(0.0)
-    # 必须要保留strand，后面在进行Bed.expand时需要它
+    # must remain strand，it will be used when Bed.expand
     rna_df = rna_df[["chrom", "chromStart", "chromEnd", "strand"]]
     rna_df["strand"] = rna_df["strand"].astype(np.str_)
     rna_df.index = rna_df.index.astype(np.str_)
@@ -156,7 +156,7 @@ def create_mosaic_dataset(root: str) -> MuData:
         protein.append(adatai)
     protein = ad.concat(protein, axis=0, merge="same")
 
-    # NOTE: 这样会导致atac在前面，也取出第3、4个批次放在前面，可以交换rna和atac的顺序来解决
+    # NOTE: the order of batches is 1, 3, 2, 4
     mdata = MuData({"atac": atac, "rna": rna, "protein": protein})
     mdata.var_names_make_unique()
 
@@ -193,28 +193,16 @@ def preprocess_mudata(mdata: MuData) -> MuData:
         shape=(var_rna.shape[0], var_protein.shape[0]),
     )
     # 3. global network
-    n_atac, n_rna, n_prot = (
-        mdata.mod["atac"].n_vars,
-        mdata.mod["rna"].n_vars,
-        mdata.mod["protein"].n_vars,
-    )
-    net = sp.vstack(
+    # n_atac, n_rna, n_prot = (
+    #     mdata.mod["atac"].n_vars,
+    #     mdata.mod["rna"].n_vars,
+    #     mdata.mod["protein"].n_vars,
+    # )
+    net = sp.block_array(
         [
-            sp.hstack(
-                [
-                    sp.coo_array((n_atac, n_atac)),
-                    atac_rna,
-                    sp.coo_array((n_atac, n_prot)),
-                ]
-            ),
-            sp.hstack([atac_rna.T, sp.coo_array((n_rna, n_rna)), rna_protein]),
-            sp.hstack(
-                [
-                    sp.coo_array((n_prot, n_atac)),
-                    rna_protein.T,
-                    sp.coo_array((n_prot, n_prot)),
-                ]
-            ),
+            [None, atac_rna, None],
+            [atac_rna.T, None, rna_protein],
+            [None, rna_protein.T, None],
         ]
     )
     mdata.varp["net"] = sp.csr_matrix(net)  # anndata only support csr and csc

@@ -22,7 +22,9 @@ class Checkpointer:
         self._model_state_dict = None
         self._flag_reuse = False
 
-    def watch(self, history: History, ind: int = -1) -> float:  # 返回：当前的监控分数
+    def watch(
+        self, history: History, ind: int = -1
+    ) -> float:  # return the monitored score
         self._flag_reuse = False
         self._scorei = history._hist[self._k1][self._k2][ind]
         self._epochi = history._hist[self._k1]["epoch"][ind]
@@ -30,7 +32,9 @@ class Checkpointer:
 
     def update_best(self, model: nn.Module, verbose: int = 0) -> bool:
         if self._flag_reuse:
-            raise ValueError("early stopper中储存的score被用了两次")
+            raise ValueError(
+                "the score stoared in early stopper was used twice."
+            )
         self._flag_reuse = True
         if self._mode == "max":
             flag = self._scorei > self._best["value"]

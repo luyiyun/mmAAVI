@@ -28,10 +28,10 @@ LOSS = Dict[str, T]
 
 
 def split_v(v: T, feat_dims: Dict[str, int]) -> Dict[str, T]:
-    # TODO: 这个分解顺序可能被保证吗？
+    # TODO:Can this decomposition order be guaranteed?
     vs, start = {}, 0
     for k, ndim in feat_dims.items():
-        vs[k] = v[start : (start + ndim), :]  # dim0才是feature的维度
+        vs[k] = v[start : (start + ndim), :]
         start += ndim
     return vs
 
@@ -79,11 +79,11 @@ class BaseMultiOmicsDecoder(nn.Module):
 
     @abstractmethod
     def forward(self, batch: GMINIBATCH, enc_res: FRES) -> FRES:
-        """返回的是dict of distribution"""
+        """return dict of distribution"""
 
     @abstractmethod
     def step(self, batch: GMINIBATCH, enc_res: FRES) -> Tuple[FRES, LOSS]:
-        """返回的是dict of distribution和losses"""
+        """return dict of distribution和losses"""
 
 
 class MLPMultiModalDecoder(BaseMultiOmicsDecoder):
@@ -101,10 +101,13 @@ class MLPMultiModalDecoder(BaseMultiOmicsDecoder):
         distributions_style: Union[str, Mapping[str, str]] = "batch",
     ) -> None:
         """
-        如果是batch-style nb，则还需要输入library size到ccov中。
-        因为可能不是所有的omics都使用nb，所以我们不能将那个1加入到这里的ccov中。
-        所以默认这里的而ccov_dims是不包含这个1的，这个1将被自动包括进去
-        同样，forward中输入的那个library size也不被包含在ccovs中，而是在kwargs
+        If it is batch-style NB, the library size also needs to be input into
+            ccov.
+        Since not all omics may use NB, we cannot add that 1 to ccov here.
+        Therefore, by default, the ccov_dims here does not include this 1,
+            which will be automatically included.
+        Similarly, the library size input in forward is not included in ccovs
+            but in kwargs.
         """
         super().__init__(outcs=outcs, reduction=reduction)
         if isinstance(distributions, str):
@@ -180,7 +183,7 @@ class DotMultiModalDecoder(BaseMultiOmicsDecoder):
         distributions: Union[str, Mapping[str, str]] = "nb",
         distributions_style: Union[str, Mapping[str, str]] = "batch",
     ) -> None:
-        """这个解码器可以在做dot之前先进行非线性映射"""
+        """this decoder can do non-linear mapping before dot calculation"""
         super().__init__(outcs=outcs, reduction=reduction)
         if isinstance(distributions, str):
             distributions = {k: distributions for k in outcs.keys()}
@@ -254,10 +257,13 @@ class MixtureMultiModalDecoder(BaseMultiOmicsDecoder):
         distributions_style: Union[str, Mapping[str, str]] = "batch",
     ) -> None:
         """
-        如果是batch-style nb，则还需要输入library size到ccov中。
-        因为可能不是所有的omics都使用nb，所以我们不能将那个1加入到这里的ccov中。
-        所以默认这里的而ccov_dims是不包含这个1的，这个1将被自动包括进去
-        同样，forward中输入的那个library size也不被包含在ccovs中，而是在kwargs
+        If it is batch-style NB, the library size also needs to be input into
+            ccov.
+        Since not all omics may use NB, we cannot add that 1 to ccov here.
+        Therefore, by default, the ccov_dims here does not include this 1,
+            which will be automatically included.
+        Similarly, the library size input in forward is not included in ccovs
+            but in kwargs.
         """
         assert (weight_dot > 0.0) and (weight_dot < 1.0)
 
@@ -296,7 +302,9 @@ class MixtureMultiModalDecoder(BaseMultiOmicsDecoder):
             )
 
     def forward(self, batch: GMINIBATCH, enc_res: FRES) -> FRES:
-        """这个模型仿效的是mlp decoder，所以不需要将library放在外面"""
+        """
+        this module mimic mlp decoder, so don't need to put library outside.
+        """
         v = enc_res["vsample"]
         vs = split_v(v, self.outcs)
 

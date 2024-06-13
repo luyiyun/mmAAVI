@@ -48,7 +48,7 @@ class MMAAVINET(nn.Module):
         hiddens_dec: Optional[Sequence[int]] = (
             256,
             256,
-        ),  # 可能是None在glue-style decoder时
+        ),
         hiddens_prior: Sequence[int] = (),
         hiddens_disc: Optional[Sequence[int]] = (256, 256),
         distributions: Union[str, Mapping[str, str]] = "nb",
@@ -165,8 +165,8 @@ class MMAAVINET(nn.Module):
                 distributions_style=distributions_style,
             )
         elif decoder_style == "glue":
-            # NOTE: 这里会将hiddens_dec用于前面的非线性变换，所以正常来说，在使用
-            # glue style decoder时，应该将hiddens设为None
+            # NOTE: hiddens_dec will used in non-linear transformation.
+            # when using glue style decoder，shoule set hiddens as None
             self.decoder = DotMultiModalDecoder(
                 outcs=dim_outputs,
                 nbatch=nbatches,
@@ -194,7 +194,7 @@ class MMAAVINET(nn.Module):
                 distributions_style=distributions_style,
             )
 
-        # glue和mixture都需要graph encoder和decoder的参与
+        # glue and mixture will both need graph encoder and decoder
         if decoder_style != "mlp":
             self.gencoder = GraphEncoder(
                 sum(dim_outputs.values()),

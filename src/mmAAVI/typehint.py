@@ -43,14 +43,12 @@ TUPLE_NET = Tuple[
 ]
 NETS = Dict[str, Tuple[T, T, T]]
 
-# NOTE: numpy有两套定义随机性的系统：randomstate和generator
-# 因为sklearn用的是randomstate，所以我们也是沿用randomstate
 SEED = Optional[int]
 
 # 2. For Model
-EMBED = Union[T, tuple[T, ...]]  # 有可能返回多个隐变量
+EMBED = Union[T, tuple[T, ...]]
 X_REC = odict[str, Distribution]
-LOSS = Dict[str, T]  # 这里储存的是loss和其对应的weight
+LOSS = Dict[str, T]  # loss and weight
 LOSS_W = Dict[str, Tuple[T, float]]
 FORWARD = Dict[str, Union[Distribution, T]]
 

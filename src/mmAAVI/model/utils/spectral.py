@@ -2,7 +2,8 @@ import torch.nn as nn
 
 
 def spectral_norm_linear(module: nn.Module):
-    if type(module) == nn.Linear:
+    # if type(module) == nn.Linear:
+    if isinstance(module, nn.Linear):
         nn.utils.parametrizations.spectral_norm(module)
 
 

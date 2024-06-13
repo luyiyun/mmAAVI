@@ -15,7 +15,7 @@ class GradientReversalFunc(Function):
         grad_input = None
         _, alpha = ctx.saved_tensors
         if ctx.needs_input_grad[0]:
-            grad_input = - alpha*grad_output
+            grad_input = -alpha * grad_output
         return grad_input, None
 
 

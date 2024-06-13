@@ -83,14 +83,14 @@ def pca(dat: typ.DATA_ELEM, n_components: int = 20, **kwargs) -> np.ndarray:
 
 def merge_obs_from_all_modalities(mdata: MuData, key: str) -> str:
     if key in mdata.obs.columns:
-        # 如果能直接找到batch label，就直接使用
+        # if finding batch label，directly use
         return
 
     assert all(key in adatai.obs.columns for adatai in mdata.mod.values()), (
         f"{key} is neither in mudata.obs nor "
         "in adata.obs for each modality."
     )
-    # 如果找不到，就根据每个组学的obs创建一个
+    # if not finding, create one by omics
     if key in mdata.obs.columns:
         warnings.warn(
             f"{key} exists, it will " "be cover by intermediate columns."

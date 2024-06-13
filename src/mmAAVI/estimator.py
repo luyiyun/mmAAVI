@@ -62,7 +62,7 @@ class MMAAVI:
         hiddens_dec: Optional[Sequence[int]] = (
             256,
             256,
-        ),  # 可能是None在glue-style decoder时
+        ),  # may be None in glue-style decoder
         hiddens_prior: Sequence[int] = (),
         hiddens_disc: Optional[Sequence[int]] = (256, 256),
         distributions: Union[str, Mapping[str, str]] = "nb",
@@ -252,7 +252,7 @@ class MMAAVI:
         if self.seed_ is not None:
             setup_seed(self.seed_, self.deterministic_)
 
-        # TODO: 加更多提示信息
+        # TODO: add more tips
         # ======================= prepare dataset =======================
         # encode the batch label as integer codes
         merge_obs_from_all_modalities(mdata, self.batch_key_)
@@ -304,7 +304,7 @@ class MMAAVI:
             shuffle=True,
             num_workers=self.num_workers_,
             pin_memory=self.pin_memory_,
-            # 当decoder是mlp时，不需要graph
+            # if decoder is mlp, do not need graph
             net_key=self.net_key_ if self.decoder_style_ != "mlp" else None,
             graph_batch_size=self.graph_batch_size_,
             drop_self_loop=self.drop_self_loop_,
@@ -330,11 +330,14 @@ class MMAAVI:
             drop_self_loop=self.drop_self_loop_,
             num_negative_samples=self.num_negative_samples_,
             label_ratio=self.ss_label_ratio_,
-            # 设置repeat_sample=False，valid时会重新组织batch让label和unlabel均衡，
-            # 但是不会重采样让labeled samples变多
+            # Set repeat_sample=False. During validation, batches will be
+            #   reorganized to balance labeled and unlabeled samples, but
+            #   labeled samples will not be resampled to increase their
+            #   quantity.
             repeat_sample=False,
-            balance_sample_size=None,  # valid时不进行平衡采样
-            # TODO: valid dataset是否还需要balanced sampler和semisupervised sampler
+            balance_sample_size=None,  # do not balance sample when valid
+            # TODO: does valid dataset need balanced sampler
+            #   and semisupervised sampler?
             drop_last=False,
         )
 
@@ -436,14 +439,15 @@ class MMAAVI:
             output_key=self.output_key_,
             batch_key=batch_code_key,
             dlabel_key=self.dlabel_key_,
-            # 计算embeddings不需要label，加了这个sslabel_key会导致使用
-            # SemisupervisedSampler，使顺序出现问题
+            # do not need label when calc embeddings
+            # use sslabel_key make using SemisupervisedSampler，the order will
+            #   be error
             sslabel_key=None,  # sslabel_code_key,
             batch_size=self.batch_size_,
             shuffle=False,
             num_workers=self.num_workers_,
             pin_memory=self.pin_memory_,
-            net_key=None,  # 计算embeddings不需要graph
+            net_key=None,  # do not need graph when calc embeddings
             graph_batch_size=self.graph_batch_size_,
             drop_self_loop=self.drop_self_loop_,
             num_negative_samples=self.num_negative_samples_,
@@ -511,7 +515,7 @@ class MMAAVI:
         )
 
         # encode the sslabel as integer codes, nan as -1
-        # sslabel_code_key = None  # TODO: differential时用不到sslabel
+        # sslabel_code_key = None  # TODO: cannot use sslable when differential
         # if self.sslabel_key_ is not None:
         #     sslabel_array_key = merge_obs_from_all_modalities(
         #         mdata, self.sslabel_key_
@@ -566,7 +570,8 @@ class MMAAVI:
                 output_key=self.output_key_,
                 batch_key=batch_code_key,
                 dlabel_key=self.dlabel_key_,
-                sslabel_key=None,  # sslabel_code_key, 重构不需要标签的参与
+                # sslabel_code_key, reconstruction do not need label
+                sslabel_key=None,
                 batch_size=self.batch_size_,
                 # shuffle=False,
                 num_workers=self.num_workers_,
@@ -584,7 +589,7 @@ class MMAAVI:
                 output_key=self.output_key_,
                 batch_key=batch_code_key,
                 dlabel_key=self.dlabel_key_,
-                sslabel_key=None,  # sslabel_code_key, 重构不需要标签的参与
+                sslabel_key=None,
                 batch_size=self.batch_size_,
                 # shuffle=False,
                 num_workers=self.num_workers_,

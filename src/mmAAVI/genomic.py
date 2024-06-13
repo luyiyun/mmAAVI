@@ -330,7 +330,7 @@ class Bed(ConstrainedDataFrame):
         row_index = np.concatenate(row_index)
         col_index = np.concatenate(col_index)
 
-        # 重新整理顺序
+        # reorder
         leftind = pd.Series(range(left.shape[0]), index=left.index)
         leftind = leftind.loc[row_index].values
         rightind = pd.Series(range(right.shape[0]), index=right.index)
@@ -367,9 +367,9 @@ def search_genomic_pos(
         as_dataframe=True,
         df_index=True,
     )
-    # 去掉了不在常染色体和性染色体上的gene
+    # remove genes which not in autosomes and sex chromosomes
     res = res[res["genomic_pos.chr"].isin(chroms)]
-    # 有两个重复的gene，手动去除(下面给出的是去除的genes)
+    # remove two duplicated genes, remove manually
     if remove_genes:
         masks = []
         for namei, starti in remove_genes:
@@ -380,7 +380,7 @@ def search_genomic_pos(
         masks = np.stack(masks, axis=1)
         masks = np.any(masks, axis=1)
         res = res[~masks]
-    # 将变量名改一下
+    # modify the var names
     res.rename(
         inplace=True,
         columns={

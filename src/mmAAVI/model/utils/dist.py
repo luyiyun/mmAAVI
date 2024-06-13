@@ -6,7 +6,6 @@ from ...constant import EPS
 
 
 class ZILN(LogNormal):
-
     r"""
     Zero-inflated log-normal distribution with subsetting support
 
@@ -29,7 +28,10 @@ class ZILN(LogNormal):
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
         zi_log_prob = torch.empty_like(value)
         z_mask = value.abs() < EPS
-        z_zi_logits, nz_zi_logits = self.zi_logits[z_mask], self.zi_logits[~z_mask]
+        z_zi_logits, nz_zi_logits = (
+            self.zi_logits[z_mask],
+            self.zi_logits[~z_mask],
+        )
         zi_log_prob[z_mask] = z_zi_logits - F.softplus(z_zi_logits)
         zi_log_prob[~z_mask] = LogNormal(
             self.loc[~z_mask], self.scale[~z_mask]

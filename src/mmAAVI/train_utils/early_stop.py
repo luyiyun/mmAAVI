@@ -8,7 +8,9 @@ from .history import History
 
 class EarlyStopper:
 
-    def __init__(self, metric: str, phase: str = "valid", patient: int = 10) -> None:
+    def __init__(
+        self, metric: str, phase: str = "valid", patient: int = 10
+    ) -> None:
         self._patient = patient
         self._metric = metric
         self._phase = phase

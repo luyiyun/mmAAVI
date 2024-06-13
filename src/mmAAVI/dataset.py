@@ -59,7 +59,7 @@ class MosaicMuDataset(D.Dataset):
         dlabel_key: Optional[str] = None,
         sslabel_key: Optional[str] = None,
     ) -> None:
-        # TODO: 如果batch_key是None，也就是没有批次效应，该怎么处理
+        # TODO: how to handle that batch_key is None?
         if batch_key is None:
             raise NotImplementedError
 
@@ -71,53 +71,6 @@ class MosaicMuDataset(D.Dataset):
         self._batch_key = batch_key
         self._dlabel_key = dlabel_key if dlabel_key is not None else batch_key
         self._sslabel_key = sslabel_key
-        # self._nrows_cum = np.cumsum(data.batch_dims)
-        # self._imp_miss = impute_miss
-
-        # prepare input and output ...
-        # self._in_eq_out = (
-        #     input_use is None and output_use is None
-        # ) or input_use == output_use
-        # self._inpt_grid = data.reps[input_use] if input_use else data.X
-        # self._oupt_grid = data.reps[output_use] if output_use else data.X
-        # self._inpt_grid.as_sparse_type("csr")
-        # self._oupt_grid.as_sparse_type("csr")
-
-        # # prepare meta variables ...
-        # self._use_obs = pd.DataFrame(index=data.obs.index)
-        # # 处理blabel和dlabel
-        # bl = "_batch" if obs_blabel is None else obs_blabel
-        # dl = "_batch" if obs_dlabel is None else obs_dlabel
-        # self._blabel = data.obs[bl].astype("category")
-        # self._blabel_codes = self._blabel.cat.codes.values
-        # self._dlabel = data.obs[dl].astype("category")
-        # self._dlabel_codes = self._dlabel.cat.codes.values
-        # # 处理sslabel
-        # if obs_sslabel is not None:
-        #     sslabel = data.obs[obs_sslabel].copy()
-        #     sslabel.replace(sslabel_mapping, inplace=True)
-        #     sslabel.fillna(-1, inplace=True)
-        #     self._sslabel_codes = sslabel.values
-        #     # 记录sslabel的无缺失版本，用于计算指标
-        #     if obs_sslabel_full is not None:
-        #         sslabelf = data.obs[obs_sslabel_full].copy()
-        #         sslabelf.replace(sslabel_mapping, inplace=True)
-        #         self._sslabel_full_codes = sslabelf.values
-        #     else:
-        #         self._sslabel_full_codes = None
-        # else:
-        #     self._sslabel_codes = None
-        #     self._sslabel_full_codes = None
-
-        # self._keys_od = ["input", "output", "mask"]
-        # if self._imp_miss:
-        #     self._keys_od.append("imp_blabel")
-        # self._keys_od = np.array(self._keys_od).astype(np.str_)
-
-        # self._keys_arr = ["blabel", "dlabel"]
-        # if self._sslabel_codes is not None:
-        #     self._keys_arr.append("sslabel")
-        # self._keys_arr = np.array(self._keys_arr).astype(np.str_)
 
     def __len__(self) -> int:
         return self._mdata.n_obs
@@ -126,10 +79,12 @@ class MosaicMuDataset(D.Dataset):
         row = self._mdata[index, :]
         inpts, outputs, mask = {}, {}, {}
         for k, row_ann in row.mod.items():
-            # 使用bool将np.bool_转换，避免deprecated warning
+            # use bool to convert the values with np.bool_,
+            # avoid deprecated warning
             mask[k] = bool(self._mdata.obsm[k][index])
-            # NOTE: row_ann的n_obs为0并不能证明这个组学缺失，还有可能是因为这个组学
-            # 的count就是0，正确的做法是通过mudata的obsm["OMIC_NAME"][i]来判断
+            # NOTE: can not use row_ann.n_obs==0 to prove the omic missing,
+            # it is also happened when count is 0.
+            # the true approach is by mudata.obsm["OMIC_NAME"][i]
             if row_ann.n_obs == 0:
                 inpts[k] = torch.zeros(row_ann.n_vars, dtype=torch.float32)
                 outputs[k] = torch.zeros(row_ann.n_vars, dtype=torch.float32)
@@ -164,11 +119,12 @@ class MosaicMuDataset(D.Dataset):
 
 
 class BalanceSizeSampler:
-
     """
-    根据某个标签(比如batch)重新调整采样的比例， 目的是让这些标签的数量在训练中保持一致
-    不能直接重采样一个mdata，然后放入loader中使用，因为我们必须要保证每个epoch重采样
-        的样本都不一致，这样才能保证泛化性。
+    Adjust the sampling ratio according to a specific label (such as batch) to
+    ensure that the number of these labels remains consistent during training.
+    You cannot directly resample MuData and then use it in the loader
+    because we must ensure that the samples resampled for each epoch
+    are different to ensure generalization.
     """
 
     def __init__(
@@ -213,15 +169,14 @@ class BalanceSizeSampler:
 
 
 class SemiSupervisedSampler:
-
     """
-    注意，这是一个batch sampler
-    为半监督生成batch，
-        保证每个batch都包含足够的unlabel和labeled样本。
-        他们两者是分别采样，然后放在一起的。
-        其总批次数量=批次数量较大的那个
+    Note, this is a batch sampler.
 
-    需要同时控制random和np.random的随机性
+    For semi-supervised batch generation,
+    Ensure each batch contains enough unlabeled and labeled samples.
+    They are sampled separately and then combined together.
+    The total number of batches equals the larger batch number.
+    You need to control the randomness of both random and np.random.
     """
 
     def __init__(
@@ -238,10 +193,12 @@ class SemiSupervisedSampler:
         balance_sample_size: Union[str, int] = "max",
     ) -> None:
         """
-        label_ratio 表示labeled sample在一个batch size中所占的比例
-        shuffle=True just work for balance_label_key is None
-        repeat_sample=True 如果label或unlabel样本不够时，重新从头开始采样，保证每个
-            批次都有label和unlabel的样本
+        label_ratio indicates the proportion of labeled samples
+            in a batch size.
+        shuffle=True only works when balance_label_key is None.
+        repeat_sample=True ensures that if there are not enough labeled or
+            unlabeled samples, resampling starts from the beginning, ensuring
+            each batch contains both labeled and unlabeled samples.
         """
 
         assert (label_ratio >= 0.0) and (
@@ -255,8 +212,10 @@ class SemiSupervisedSampler:
         self._shuffle = shuffle
         self._repeat_sample = repeat_sample
 
-        self._label_bs = int(batch_size * label_ratio)  # label样本在批次中的数量
-        self._unlabel_bs = batch_size - self._label_bs  # unlabel在批次中的数量
+        self._label_bs = int(
+            batch_size * label_ratio
+        )  # the number of label samples in certain batch
+        self._unlabel_bs = batch_size - self._label_bs
 
         sslabel = mdata.obs[sslabel_key].values
         is_unlabel = sslabel == nan_as
@@ -290,13 +249,13 @@ class SemiSupervisedSampler:
                     batch_mask & (is_unlabel)
                 )[0]
         else:
-            # label样本的indices
+            # indices of labelled samples
             self._indices_unlabel = np.nonzero(is_unlabel)[0]
-            # unlabel的indices
+            # indices of unlabelled samples
             self._indices_label = np.nonzero(np.logical_not(is_unlabel))[0]
-            # label样本的数量
+            # number of labelled samples
             size_unlabel = self._indices_unlabel.shape[0]
-            # unlabel样本的数量
+            # number of unnlabelled samples
             size_label = self._indices_label.shape[0]
 
         if drop_last:
@@ -332,8 +291,9 @@ class SemiSupervisedSampler:
                     (li * self._label_bs) : ((li + 1) * self._label_bs)
                 ]
             else:
-                # NOTE: 不能用[]，np.r_依然可以工作，但是会默认将dtype从int转换为
-                # float，其作为index在getitem利用时会失效
+                # NOTE: Do not use []. np.r_ can still work, but it will
+                # default to converting dtype from int to float, which will
+                # fail when used as an index in getitem.
                 batch_l = np.array([], dtype=int)
 
             if i < self._num_batch_unlabel:
@@ -353,7 +313,7 @@ class SemiSupervisedSampler:
             yield np.r_[batch_l, batch_u]
 
     def _iter_w_balance(self):
-        # 根据ctab_balance从indices_dict中进行采样，组成初始的indices
+        # sample from indices_dict by ctab_balance，construct initial indices
         # label
         self._indices_label = []
         for k, indices_k in self._indices_dict["label"].items():
@@ -406,10 +366,17 @@ class GraphDataLoader:
         vnum: int, eset: Set, i_neg: np.ndarray, vprob: np.ndarray
     ) -> np.ndarray:
         """
-        从graph中进行负采样，其中采样的edge的起点已经确定（i_neg）， 但是终点还没有。
-        采样过程中需要保证终点被采样的概率服从某个给定的概率
-        graph只会用到其起点和终点坐标，边的值不会用到，所以不需要进行abs和binary
-        该实现可能会造成infinity loop
+        Perform negative sampling from the graph, where the starting point of
+        the sampled edge is already determined (i_neg), but the endpoint is
+        not yet determined.
+
+        During the sampling process, it is necessary to ensure that the
+        probability of the endpoint being sampled follows a given probability.
+
+        The graph will only use its starting and ending coordinates, the edge
+        values will not be used, so there is no need to perform abs and binary.
+
+        This implementation may result in an infinity loop.
         """
         j_neg = np.random.choice(vnum, i_neg.size, replace=True, p=vprob)
         # maybe some negative edge is actually pos, remove and re-sampling
@@ -427,7 +394,8 @@ class GraphDataLoader:
         graph: sp.csr_matrix, i_neg: np.ndarray, vprob: np.ndarray
     ) -> np.ndarray:
         """
-        该实现是循环地针对每个起点进行采样，采样中只针对其非邻节点采样
+        This implementation samples for each starting point in a loop, and
+        only samples from its non-neighboring nodes.
         """
         indptr, indices = graph.indptr, graph.indices
         all_indices = np.arange(graph.shape[0])
@@ -449,13 +417,16 @@ class GraphDataLoader:
         weighted_sampling: bool = True,
         drop_self_loop: bool = True,
     ) -> SUBGRAPH:
-        # 其实这里采样的也不是一个子图，而是对整个图的replace重采样，
-        # 可以看做是graph的噪声扰动
+        # sample whole graph, not sample subgraph.
+        # this can be seen as add noise into the graph.
         vnum = net.shape[0]
 
         # NOTE: 遵照之前的写法，把drop_self_loop前置，其会影响到i\j\es\ew的值
-        # TODO: 这里和我原来写的有点区别。这里setdiag会影响到degree的计算；但是原来
-        # 的写法是不会影响到degree的计算的
+        # NOTE: Following the previous writing, move drop_self_loop to an
+        # earlier stage, as it will affect the values of i, j, es, and ew.
+        # TODO: This is a bit different from what I originally wrote.
+        # Here, setdiag will affect the calculation of the degree; however,
+        # the original approach did not affect the calculation of the degree.
         if drop_self_loop:
             net.setdiag(0)
 
@@ -479,7 +450,7 @@ class GraphDataLoader:
             if weighted_sampling
             else np.ones(vnum, dtype=float)
         )
-        # NOTE: == 下面的code并未改动 ==
+        # NOTE: == code is not modified ==
         degree_sum = degree.sum()
         if degree_sum:
             vprob = degree / degree_sum  # Vertex sampling probability
@@ -598,7 +569,8 @@ class GraphDataLoader:
         if isinstance(self._bs, float):
             assert (self._bs > 0.0) and (self._bs < 1.0)
             n_edges = self._net.nnz
-            self._bs = int(n_edges * (1 + self._nns) * self._bs)  # 负采样
+            # negative sampling
+            self._bs = int(n_edges * (1 + self._nns) * self._bs)
         logging.info("network batch size is %d" % self._bs)
 
         if self._phase == "test":
@@ -619,7 +591,9 @@ class GraphDataLoader:
             self._net, self._nns, drop_self_loop=self._dsl
         )
         self._normed_subgraph = self.normalize_subgraph(subgraph)
-        # 计算总的迭代数量，设置一个计数变量，当其超过迭代总量时停止迭代
+        # Calculate the total number of iterations.
+        # Set a counter variable and stop the iteration when it exceeds the
+        # total number of iterations.
         n_edge_subgraph = self._normed_subgraph[0].size(0)
         self._iter_index = 0
         self._iter_length = (n_edge_subgraph + self._bs - 1) // self._bs
@@ -715,15 +689,21 @@ def get_dataloader(
     balance_sample_size: Optional[Union[str, int]] = None,
     label_ratio: float = 0.2,
     repeat_sample: bool = True,
-    drop_last: bool = False
+    drop_last: bool = False,
 ) -> Union[D.DataLoader, ParallelDataLoader]:
     """
-    resample_size: 随机重新采样的数量，如果是None则不进行重采样，用在differential
-    balance_sample_size: 指定每个批次的采样数量，目的是在训练时平衡批次的样本数量。
-        如果其为None，则表示不进行balance_sample_size。
-        resample_size 和 balance_sample_size不能同时开启!!!
-    graph_data_phase: 如果是test，则每个批次只返回完整的normed graph.
+    resample_size: The number of random resamples. If it is None, resampling
+    is not performed. This is used in differential.
+
+    balance_sample_size: Specifies the number of samples per batch to balance
+    the sample sizes during training. If it is None, balance_sample_size
+    is not performed.
+    resample_size and balance_sample_size cannot be enabled simultaneously!!!
+
+    graph_data_phase: If it is test, each batch only returns the
+    complete normed graph.
     """
+
     assert (resample_size is None) or (
         balance_sample_size is None
     ), "resample_size and balance_sample_size can not be set at the same time."
@@ -737,7 +717,7 @@ def get_dataloader(
         sslabel_key=sslabel_key,
     )
     if sslabel_key is not None:
-        # 应该使用SemiBatchSampler
+        # should use SemiBatchSampler
         sssampler = SemiSupervisedSampler(
             mdata,
             sslabel_key,
@@ -745,9 +725,9 @@ def get_dataloader(
             label_ratio=label_ratio,
             shuffle=shuffle,
             repeat_sample=repeat_sample,
-            # 如果balance_sample_size为None，则表示不进行balance sampling。但是
-            #   在SemiSupervisedSampler中，控制是否进行balance sampling是通过
-            #   balance_label_key来控制的。
+            # If balance_sample_size is None, balance sampling is not
+            # performed. However, in SemiSupervisedSampler, whether to perform
+            # balance sampling is controlled by balance_label_key.
             balance_label_key=(
                 None if balance_sample_size is None else batch_key
             ),
@@ -766,7 +746,7 @@ def get_dataloader(
             shuffle=shuffle,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            drop_last=drop_last
+            drop_last=drop_last,
         )
     else:
         if resample_size is not None:
@@ -781,7 +761,7 @@ def get_dataloader(
             sampler=sampler,
             num_workers=num_workers,
             pin_memory=pin_memory,
-            drop_last=drop_last
+            drop_last=drop_last,
         )
     if net_key is None:
         return mdataloader

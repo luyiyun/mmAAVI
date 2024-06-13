@@ -24,7 +24,7 @@ class Timer:
 
 
 def merge_multi_obs_cols(arrs: List[np.ndarray]) -> np.ndarray:
-    """merge all arrs into one, 如果不是none，则相同位置必须相同"""
+    """merge all arrs into one"""
     out = arrs[0]
     for arri in arrs[1:]:
         mask_out_nan = pd.isnull(out)
@@ -137,7 +137,7 @@ def save_args_cls(exclude: Sequence[str] = ()):
 
             fres = f(cls, *args, **kwargs)
 
-            # 将参数结果储存在对象中
+            # save the value of arguments into the object
             fres._arguments = {}
             fres._arguments[f.__name__] = params
             return fres

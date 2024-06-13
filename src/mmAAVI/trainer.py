@@ -146,7 +146,7 @@ class Trainer:
             checkpointer = Checkpointer("metric", "valid")
         if early_stop:
             early_stopper = EarlyStopper("metric", "valid", early_stop_patient)
-        # 记录上一次的lr，以及lr变化的次数
+        # recode the last lr, and the number of lr changed.
         flag_es_lr = (
             lr_schedual is not None
             and early_stop
@@ -175,16 +175,16 @@ class Trainer:
             range(max_epochs), desc="Epoch: ", disable=(verbose < 1)
         ):
             self._e = e
-            # 取出当前批次使用的权重
+            # get the weight of current minibatch
             # self.weight_values_e = {
             #     k: v[e] for k, v in self.weight_values.items()
             # }
             if writer is not None:
-                # 记录lr的变化
-                # 这里所有的参数使用相同lr，选择第一个即可
+                # record the change of lr
+                # select first one, because all parameters use the same lr
                 current_lr = opt.param_groups[0]["lr"]
                 writer.add_scalar("lambda/learning_rate", current_lr, e)
-                # 将这些权重加入到tensorboard中
+                # add this weights into tensorboard
                 for k, v in self.weight_values_e.items():
                     writer.add_scalar("lambda/%s" % k, v, e)
 
@@ -237,7 +237,7 @@ class Trainer:
                         accumutor.add(**losses)
 
                         if flag_cat_valid_outputs:
-                            # 记录embed用于umap绘图
+                            # record embed to umap plotting
                             embed = [enc_res["z"].mean]
                             if "c" in enc_res:
                                 embed.append(enc_res["c"].probs)
@@ -252,47 +252,19 @@ class Trainer:
                     tqdm.write(history_recoder.show_record("valid", -1))
 
                 if flag_cat_valid_outputs:
-                    # TODO: 可以实时计算一些指标
+                    # TODO: calc some metrics
                     pass
-                    # labels = np.concatenate(labels)
-                    # # blabels = torch.cat(blabels).detach().cpu().numpy()
-                    # z, clu_prob = concat_embeds(outputs)
 
-                    # if clu_prob is None:
-                    #     # 需要通过leiden cluster来得到clu
-                    #     clu = leiden_cluster(
-                    #         z.detach().cpu().numpy(),
-                    #         resolution=0.2, n_jobs=4
-                    #     )
-                    # else:
-                    #     clu = clu_prob.argmax(dim=1).detach().cpu().numpy()
-
-                # if (
-                #     ((e % valid_umap_interval == 0) or e == (max_epochs - 1))
-                #     and valid_show_umap
-                #     and writer is not None
-                # ):
-                #     # 绘制umap到tensorboard中
-                #     # valid可能也是shuffle的，则需要通过index来重新得到这些
-                #     # label的顺序
-                #     obs_labels_i = {
-                #         k: v.loc[indexes].values
-                #         for k, v in obs_labels.items()
-                #     }
-                #     obs_labels_i["cluster"] = clu
-                #     umap_embeds_in_tb(e, writer, z, obs_labels_i)
-
-            # 监控并保存模型
-            # 这个score_main可能lr_sch和save_best都会用到
+            # monitor and save model
             if lr_schedual == "reduce_on_plateau" or checkpoint_best:
                 score_main = checkpointer.watch(history_recoder)
 
-            # 如果需要保存最好的模型而非最后，需要根据选择出的score进行更新
+            # if save the best instead of the last
             if checkpoint_best:
-                # 需要先运行watch方法，才能运行update_best
+                # must run update_best before run watch
                 checkpointer.update_best(self.model, verbose)
 
-            # 更新学习率，可能需要score的参与
+            # udpate learning rate, may need score
             if schedual is not None:
                 if (
                     isinstance(schedual, lrsch.ReduceLROnPlateau)
@@ -302,12 +274,12 @@ class Trainer:
                 else:
                     schedual.step()
 
-            # 根据当前的结果决定是否早停
+            # early stop by current results
             if early_stop:
                 early_stopper.watch(history_recoder)
                 if early_stopper.is_stop():
                     break
-            # 根据当前的lr更新决定是否早停
+            # early stop by current lr
             if flag_es_lr:
                 early_stopper_lr.watch(opt)
                 if early_stopper_lr.is_stop():

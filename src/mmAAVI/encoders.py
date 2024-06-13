@@ -205,7 +205,7 @@ class AttGMMVEncoder(AttVEncoder):
         self.udim = udim
         self.c_reparam = c_reparam
         self.ssl = semi_supervised
-        self.temp = temperature  # TODO: 变化的temperature
+        self.temp = temperature
         # self.reuse_qcz_as_pcuz = reuse_qcz_as_pcuz
 
         self.q_c_z = DistributionMLP(
@@ -273,7 +273,7 @@ class AttGMMVEncoder(AttVEncoder):
         fres = super().forward(batch)
         z = fres["z"]
         zsample = z.rsample()
-        # forward用mean，step用rsample
+        # use mean in forward，use rsample in step
         _, c = self.q_c_z(zsample, temperature=self.temp)
         # fres = self.forward(batch)
         # z, c = fres["z"], fres["c"]
@@ -306,8 +306,9 @@ class AttGMMVEncoder(AttVEncoder):
         losses = {}
 
         if flag_ssl:
-            # 计算c已知时的elbo，elbo=-logp(x)+kl(z)+kl(u)
-            # -logp(x)将在decoder中进行计算，此处将计算剩下的2项
+            # calc elbo when c is known, elbo=-logp(x)+kl(z)+kl(u)
+            # -logp(x) will be calculated in decoder,
+            #   here will calc the remaining two
             sslabel_ss = sslabel[ssmask]
             sslabel_ss_oh = self.diag[sslabel_ss, :]
             _, u_ss = self.q_u_cz(
@@ -330,7 +331,8 @@ class AttGMMVEncoder(AttVEncoder):
 
             # -------------------------------------------------------------------
             # supervised learning
-            # 这里没有用到q_c_z，所以需要额外加一个监督训练项
+            # here q_c_z is not used, so need to add another
+            #   supervised training loss
             # -------------------------------------------------------------------
             loss_ss = F.nll_loss(c.logits[ssmask], sslabel_ss)
             # loss_ss = focal_loss(
@@ -340,7 +342,7 @@ class AttGMMVEncoder(AttVEncoder):
 
         if flag_usl:
             if self.c_reparam:
-                # 如果进行reparamatric
+                # if do reparamatric
                 csample = c.rsample()
                 csample_us = csample[ssmask_] if self.ssl else csample
                 _, u_us = self.q_u_cz(
@@ -351,13 +353,13 @@ class AttGMMVEncoder(AttVEncoder):
                 _, z_prior = self.p_z_cu(
                     torch.cat([csample_us, usample_us], dim=1)
                 )
-                # NOTE: 因为对z进行了采样，kl_z这一项不是kl散度
+                # NOTE: because sample for z, kl_z is not kl div
                 kl_z = self.reductor(
                     logq_z_x_us - z_prior.log_prob(zsample_us), dim=1
                 ).mean()
                 kl_u = self.reductor(calc_kl_normal(u_us), dim=1).mean()
             else:
-                # 如果不进行reparamatric
+                # if not do reparamatric
                 c_probs = c.probs
                 c_probs_us = c_probs[ssmask_] if self.ssl else c_probs
                 c_expand = self.diag.expand(zsample_us.size(0), -1, -1)
@@ -383,7 +385,8 @@ class AttGMMVEncoder(AttVEncoder):
                     dim=1
                 )  # N,zdim
                 kl_z = logq_z_x_us - z_prior_p
-                # NOTE: 这个kl_z其实是个重构误差，即由z得到的c和u可以重新重构z
+                # NOTE: this kl_z is a reconstructed loss,
+                #   c and u from z can reconstruct z
 
                 kl_u = kl_divergence(
                     u_us,

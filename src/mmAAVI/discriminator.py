@@ -92,9 +92,12 @@ class Discriminator(nn.Module):
         #             inpt.append(F.one_hot(t, self.dcov_dims[i]).to(inpt[0]))
         #     inpt = torch.cat(inpt, dim=-1)
 
-        # NOTE: 保证如果covs也有梯度流动，接受的梯度是反转后的梯度
-        # 这里直接截断梯度，保证没有梯度流动
-        # TODO: 所以这里其实和之前的实现也有不同，主要是梯度翻转的位置有差别
+        # NOTE: Ensure that if covs also has gradient flow, the received
+        #   gradient is the reversed gradient.
+        # Directly cut off the gradient here to ensure there is
+        #   no gradient flow.
+        # TODO: Therefore, this implementation is actually different from the
+        #   previous one, mainly in the position of the gradient reversal.
         inpt = enc_res["z"].mean if self.disc_on_mean else enc_res["zsample"]
         if self.gr:
             inpt = gradient_reversal(inpt, self.grad_alpha)

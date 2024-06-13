@@ -96,6 +96,6 @@ def merge_obs_from_all_modalities(mdata: MuData, key: str) -> str:
             f"{key} exists, it will " "be cover by intermediate columns."
         )
     array = merge_multi_obs_cols(
-        [mdata.obs[f"{k}:{key}"].values for k in mdata.mod.keys()]
+        [np.asarray(mdata.obs[f"{k}:{key}"].values) for k in mdata.mod.keys()]
     )
     mdata.obs[key] = array

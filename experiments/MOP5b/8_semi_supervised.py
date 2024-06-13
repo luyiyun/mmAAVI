@@ -19,21 +19,22 @@ from mmAAVI.utils_dev import (
 def main():
     parser = ArgumentParser()
     parser.add_argument("--preproc_data_dir", default="./res")
-    parser.add_argument("--preproc_data_name", default="pbmc")
+    parser.add_argument("--preproc_data_name", default="mop5b")
     parser.add_argument("--results_dir", default="./res")
-    parser.add_argument("--results_name", default="pbmc_semi_sup")
+    parser.add_argument("--results_name", default="mop5b_semi_sup")
     parser.add_argument("--no_timming", action="store_true")
     parser.add_argument("--seeds", default=list(range(6)), type=int, nargs="+")
     parser.add_argument("--max_epochs", default=300, type=int)
     parser.add_argument("--n_annotations", default=(100,), type=int, nargs="+")
-    parser.add_argument("--annotated_batch", default=1, type=int)
+    # default select annotations from all batches
+    parser.add_argument("--annotated_batch", default=None, type=int)
     args = parser.parse_args()
 
     # ========================================================================
     # load preporcessed data
     # ========================================================================
     batch_name = "batch"
-    label_name = "coarse_cluster"
+    label_name = "cell_type"
     mdata_fn = osp.join(
         args.preproc_data_dir, f"{args.preproc_data_name}.h5mu"
     )
@@ -65,6 +66,7 @@ def main():
             use_batch=args.annotated_batch,
             seed=0,
             slabel_name=slabel_name,
+            nmin_per_seed=2,
         )
         res_adata.obs[slabel_name] = mdata.obs[slabel_name].values
         unlabel_ind = res_adata.obs[slabel_name].isna().values
@@ -88,7 +90,7 @@ def main():
                 max_epochs=args.max_epochs,
                 device="cuda:1",
                 sslabel_key=slabel_name,
-                ss_label_ratio=0.15
+                ss_label_ratio=0.2,
             )
             if timing:
                 t1 = perf_counter()

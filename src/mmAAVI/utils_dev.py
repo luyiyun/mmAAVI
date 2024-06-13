@@ -1,4 +1,5 @@
-from typing import List, Optional, Union, Tuple
+from collections import defaultdict
+from typing import List, Optional, Union, Tuple, Any
 
 import numpy as np
 import pandas as pd
@@ -7,6 +8,7 @@ import mudata as md
 import anndata as ad
 import matplotlib
 import matplotlib.pyplot as plt
+import sklearn.metrics as M
 from plottable import ColumnDefinition, Table
 from plottable.cmap import normed_cmap
 from plottable.plots import bar
@@ -184,3 +186,261 @@ def plot_results_table(
         fig.savefig(save_name, facecolor=ax.get_facecolor(), dpi=300)
 
     return tab, fig
+
+
+def sample_by_batch_label(
+    batch: np.ndarray,
+    label: np.ndarray,
+    use_batch: Optional[Any] = None,
+    n_per_label: int = 5,
+    total_n: Optional[int] = None,
+    seed: int = 1,
+) -> np.ndarray:
+    """
+    sample indices from certain batch with all cell types
+    """
+    if use_batch is None:
+        label_batch_used = label
+        batch_ind = np.arange(len(label))
+    else:
+        batch_ind = (batch == use_batch).nonzero()[0]
+        label_batch_used = label[batch_ind]
+    label_uni, label_cnt = np.unique(label_batch_used, return_counts=True)
+    if (label_cnt < n_per_label).any():
+        insu_ind = (label_cnt < n_per_label).nonzero()[0]
+        raise ValueError(
+            "some label is insufficient: "
+            + ",".join(
+                "%s %d" % (str(label_uni[i]), label_cnt[i]) for i in insu_ind
+            )
+        )
+    rng = np.random.default_rng(seed)
+    res = []
+    for li in label_uni:
+        res.append(
+            rng.choice(
+                batch_ind[label_batch_used == li], n_per_label, replace=False
+            )
+        )
+    res = np.concatenate(res)
+    if total_n is None or (total_n == res.shape[0]):
+        return res
+
+    # 如果total_n不是None，则我们还需要为每个类别补充一些样本
+    if total_n < res.shape[0]:
+        raise ValueError(
+            "total_n can not lower than n_per_label x number of categoricals"
+        )
+    remain_n = total_n - res.shape[0]
+    res_remain = rng.choice(
+        np.setdiff1d(batch_ind, res), remain_n, replace=False
+    )
+    return np.r_[res, res_remain]
+
+
+def set_semi_supervised_labels(
+    mdata: md.MuData,
+    nsample: int,
+    batch_name: str = "batch",
+    label_name: str = "cell_type",
+    use_batch: Any = 1,
+    nmin_per_seed: str = 5,
+    seed: int = 0,
+    slabel_name: str = "annotation",
+) -> None:
+    batch_arr = mdata.obs[batch_name].values
+    label_arr = mdata.obs[label_name].values
+
+    slabel = np.full_like(label_arr, fill_value=np.NaN)
+    ind = sample_by_batch_label(
+        batch_arr,
+        label_arr,
+        use_batch=use_batch,
+        n_per_label=nmin_per_seed,
+        seed=seed,
+        total_n=nsample,
+    )
+    slabel[ind] = label_arr[ind]
+    mdata.obs[slabel_name] = slabel
+
+    # get label mappings，guarantee the label encoder of train、valid、test
+    # is the same
+    # categories_all = data.obs[label_name].dropna().unique()
+    # categories_l = data.obs["_slabel"].dropna().unique()
+    # categories_u = np.setdiff1d(categories_all, categories_l)
+    # categories = {
+    #     "all": categories_all,
+    #     "label": categories_l,
+    #     "unlabel": categories_u,
+    # }
+
+
+def evaluate_semi_supervise(
+    target_code: np.ndarray,
+    proba: np.ndarray,
+    batch: Optional[np.ndarray] = None,
+) -> pd.DataFrame:
+    res = defaultdict(list)
+
+    # ACC
+    pred = proba.argmax(axis=1)
+    acc = M.accuracy_score(target_code, pred)
+    res["ACC"].append(acc)
+    # bACC
+    bacc = M.balanced_accuracy_score(target_code, pred)
+    res["bACC"].append(bacc)
+    # recall
+    recall = M.recall_score(target_code, pred, average="micro")
+    res["recall"].append(recall)
+    # precision
+    preci = M.precision_score(target_code, pred, average="micro")
+    res["precision"].append(preci)
+    # AUC
+    iden = np.eye(proba.shape[1])
+    target_oh = iden[target_code]
+    auc = M.roc_auc_score(target_oh, proba, average="micro")
+    res["AUC"].append(auc)
+
+    res["scope"].append("global")
+    if batch is None:
+        return res
+
+    batch_uni = np.unique(batch)
+    for bi in batch_uni:
+        mask = batch == bi
+        target_bi, target_oh_bi, pred_bi, proba_bi = (
+            target_code[mask],
+            target_oh[mask, :],
+            pred[mask],
+            proba[mask, :],
+        )
+        acc = M.accuracy_score(target_bi, pred_bi)
+        bacc = M.balanced_accuracy_score(target_bi, pred_bi)
+        recall = M.recall_score(target_bi, pred_bi, average="micro")
+        preci = M.precision_score(target_bi, pred_bi, average="micro")
+        try:
+            auc = M.roc_auc_score(target_oh_bi, proba_bi, average="micro")
+        except Exception:
+            auc = np.NaN
+
+        res["ACC"].append(acc)
+        res["bACC"].append(bacc)
+        res["recall"].append(recall)
+        res["precision"].append(preci)
+        res["AUC"].append(auc)
+        res["scope"].append(bi)
+
+    res["scope"].append("average")
+    for metric in ["ACC", "bACC", "recall", "precision", "AUC"]:
+        res[metric].append(np.mean(res[metric][1:]))
+
+    res = pd.DataFrame(res)
+    return res
+
+
+def plot_labeled(
+    ax,
+    umap_xy,
+    label,
+    target,
+    palette,
+    label_makersize=5.0,
+    leg_ncols=1,
+    no_label_color="gray",
+    title=None,
+):
+    leg_loc = "best"
+    bbox_to_anchor = (1.0, 0.0, 0.3, 1.0)
+
+    categories = np.unique(target[label == "label"]).tolist()
+    for i, labeli in enumerate(["no-label"] + categories):
+        if labeli == "no-label":
+            xyi = umap_xy[label == labeli, :]
+        else:
+            xyi = umap_xy[(label == "label") & (target == labeli), :]
+        if labeli == "no-label":
+            colori = no_label_color
+        elif isinstance(palette, dict):
+            colori = palette[labeli]
+        else:
+            colori = palette[i - 1]
+        ax.plot(
+            xyi[:, 0],
+            xyi[:, 1],
+            "." if labeli == "no-label" else "*",
+            label=labeli,
+            markersize=(
+                10000 / umap_xy.shape[0]
+                if labeli == "no-label"
+                else label_makersize
+            ),
+            color=colori,
+        )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    if title is not None:
+        ax.set_title(title)
+
+    handles, labels = ax.get_legend_handles_labels()
+    leg = ax.legend(
+        handles,
+        labels,
+        loc=leg_loc,
+        frameon=False,
+        fancybox=False,
+        ncols=leg_ncols,
+        bbox_to_anchor=bbox_to_anchor,
+        columnspacing=0.2,
+        handletextpad=0.1,
+    )
+
+    for h in leg.legend_handles:
+        h.set_markersize(10.0)
+    leg.set_in_layout(True)
+
+    return ax, leg
+
+
+# plot scatter plot for a specific categorical variable
+def plot_categories(ax, umap_xy, feature, palette, leg_ncols=1, title=None):
+    leg_loc = "best"
+    bbox_to_anchor = (1.0, 0.0, 0.3, 1.0)
+
+    categories = np.unique(feature).tolist()
+    for i, labeli in enumerate(categories):
+        xyi = umap_xy[feature == labeli, :]
+        ax.plot(
+            xyi[:, 0],
+            xyi[:, 1],
+            ".",
+            label=labeli,
+            markersize=10000 / umap_xy.shape[0],
+            color=palette[labeli] if isinstance(palette, dict) else palette[i],
+        )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    if title is not None:
+        ax.set_title(title)
+
+    handles, labels = ax.get_legend_handles_labels()
+    leg = ax.legend(
+        handles,
+        labels,
+        loc=leg_loc,
+        frameon=False,
+        fancybox=False,
+        ncols=leg_ncols,
+        bbox_to_anchor=bbox_to_anchor,
+        columnspacing=0.2,
+        handletextpad=0.1,
+    )
+
+    for h in leg.legend_handles:
+        h.set_markersize(10.0)
+    leg.set_in_layout(True)
+
+    return ax, leg

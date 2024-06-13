@@ -9,6 +9,7 @@ import scanpy as sc
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import colorcet as cc
 from mmAAVI.preprocess import merge_obs_from_all_modalities
 from mmAAVI.utils_dev import plot_labeled, plot_categories
 
@@ -16,10 +17,10 @@ from mmAAVI.utils_dev import plot_labeled, plot_categories
 def main():
     parser = ArgumentParser()
     parser.add_argument("--preproc_data_dir", default="./res")
-    parser.add_argument("--preproc_data_name", default="pbmc")
+    parser.add_argument("--preproc_data_name", default="mop5b")
     parser.add_argument("--results_dir", default="./res")
-    parser.add_argument("--semi_results_name", default="pbmc_semi_sup")
-    parser.add_argument("--results_name", default="pbmc_semi_sup_eval")
+    parser.add_argument("--semi_results_name", default="mop5b_semi_sup")
+    parser.add_argument("--results_name", default="mop5b_semi_sup_eval")
     parser.add_argument("--plot_seed", default=0, type=int)
     parser.add_argument("--plot_n_anno", default=100, type=int)
     args = parser.parse_args()
@@ -28,7 +29,7 @@ def main():
     # load preporcessed data and semi-supervised results
     # ========================================================================
     batch_name = "batch"
-    label_name = "coarse_cluster"
+    label_name = "cell_type"
     mdata_fn = osp.join(
         args.preproc_data_dir, f"{args.preproc_data_name}.h5mu"
     )
@@ -92,9 +93,8 @@ def main():
     pred = semi_pred.pred.values.copy()
     umap_xy = adata_plot.obsm["X_umap"]
 
-    # target_uni = adata_plot.obs["target"].unique()
-    # palette = sns.color_palette(cc.glasbey, n_colors=len(target_uni))
-    palette = sns.color_palette()
+    target_uni = adata_plot.obs["target"].unique()
+    palette = sns.color_palette(cc.glasbey, n_colors=len(target_uni))
     fig, axs = plt.subplots(ncols=3, nrows=1, figsize=(16, 4))
     plot_labeled(
         axs[0],

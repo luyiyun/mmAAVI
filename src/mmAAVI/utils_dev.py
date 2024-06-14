@@ -9,6 +9,7 @@ import anndata as ad
 import matplotlib
 import matplotlib.pyplot as plt
 import sklearn.metrics as M
+from sklearn.model_selection import train_test_split
 from plottable import ColumnDefinition, Table
 from plottable.cmap import normed_cmap
 from plottable.plots import bar
@@ -232,8 +233,17 @@ def sample_by_batch_label(
             "total_n can not lower than n_per_label x number of categoricals"
         )
     remain_n = total_n - res.shape[0]
-    res_remain = rng.choice(
-        np.setdiff1d(batch_ind, res), remain_n, replace=False
+    # res_remain = rng.choice(
+    #     np.setdiff1d(batch_ind, res), remain_n, replace=False,
+    # )
+    selected_indice = np.setdiff1d(batch_ind, res)
+    # select stratified by label
+    res_remain, _ = train_test_split(
+        selected_indice,
+        train_size=remain_n,
+        shuffle=True,
+        random_state=seed,
+        stratify=label_batch_used[selected_indice],
     )
     return np.r_[res, res_remain]
 

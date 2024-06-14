@@ -26,8 +26,12 @@ def main():
     parser.add_argument("--seeds", default=list(range(6)), type=int, nargs="+")
     parser.add_argument("--max_epochs", default=300, type=int)
     parser.add_argument("--n_annotations", default=(100,), type=int, nargs="+")
+    parser.add_argument("--remove_less_cell_type", default=0, type=int)
     # default select annotations from all batches
     parser.add_argument("--annotated_batch", default=None, type=int)
+    parser.add_argument("--nmin_per_cate", default=1, type=int)
+    parser.add_argument("--ss_label_ratio", default=0.2, type=float)
+    parser.add_argument("--weight_sup", default=1., type=float)
     args = parser.parse_args()
 
     # ========================================================================
@@ -43,8 +47,23 @@ def main():
     merge_obs_from_all_modalities(mdata, key=label_name)
     merge_obs_from_all_modalities(mdata, key=batch_name)
 
+    # remove the cell type with less amount
+    if args.remove_less_cell_type:
+        label_vc = mdata.obs[label_name].value_counts()
+        label_remain = label_vc.iloc[
+            : -args.remove_less_cell_type
+        ].index.values
+        print(
+            "remove cell type: "
+            + ",".join(label_vc.index[-args.remove_less_cell_type :].values)
+        )
+        ind_remain = mdata.obs[label_name].isin(label_remain)
+        mdata = mdata[ind_remain, :].copy()
+
     # prepare the container to hold the results
     res_adata = ad.AnnData(obs={"placeholder": np.arange(mdata.n_obs)})
+    if args.remove_less_cell_type:
+        res_adata.obs["rev_ind"] = np.nonzero(ind_remain.values)[0]
 
     # ========================================================================
     # run semi-supervised learning
@@ -66,7 +85,7 @@ def main():
             use_batch=args.annotated_batch,
             seed=0,
             slabel_name=slabel_name,
-            nmin_per_seed=2,
+            nmin_per_seed=args.nmin_per_cate,
         )
         res_adata.obs[slabel_name] = mdata.obs[slabel_name].values
         unlabel_ind = res_adata.obs[slabel_name].isna().values
@@ -90,7 +109,7 @@ def main():
                 max_epochs=args.max_epochs,
                 device="cuda:1",
                 sslabel_key=slabel_name,
-                ss_label_ratio=0.2,
+                ss_label_ratio=args.ss_label_ratio,
             )
             if timing:
                 t1 = perf_counter()

@@ -634,3 +634,30 @@ class MMAAVI:
                 pval.detach().cpu().numpy()
             )
             mdata.var[f"{key_add}_bf_{label_name}"] = bf.detach().cpu().numpy()
+
+    def save(self, fn: str) -> None:
+        torch.save(self.model_.state_dict(), fn)
+
+    def load(self, fn: str, except_prefixs: Optional[Sequence[str]] = None):
+        if except_prefixs is None:
+            if self.sslabel_key_ is not None:
+                except_prefixs = [
+                    "encoder.q_c_z",
+                    "encoder.q_u_cz",
+                    "encoder.p_z_cu",
+                    "encoder.diag",
+                    "encoder.c_prior",
+                ]
+            else:
+                except_prefixs = []
+        state_dict = torch.load(fn, map_location=self.device_)
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            for prefix in except_prefixs:
+                if k.statswith(prefix):
+                    break
+            else:
+                new_state_dict[k] = v
+        # ms_keys, unex_keys = self.model_.load_state_dict(
+        self.model_.load_state_dict(new_state_dict, strict=False)
+        return self

@@ -25,13 +25,15 @@ def main():
     parser.add_argument("--no_timming", action="store_true")
     parser.add_argument("--seeds", default=list(range(6)), type=int, nargs="+")
     parser.add_argument("--max_epochs", default=300, type=int)
-    parser.add_argument("--n_annotations", default=(100,), type=int, nargs="+")
+    parser.add_argument(
+        "--n_annotations", default=(1000,), type=int, nargs="+"
+    )
     parser.add_argument("--remove_less_cell_type", default=0, type=int)
     # default select annotations from all batches
     parser.add_argument("--annotated_batch", default=None, type=int)
     parser.add_argument("--nmin_per_cate", default=1, type=int)
     parser.add_argument("--ss_label_ratio", default=0.2, type=float)
-    parser.add_argument("--weight_sup", default=1., type=float)
+    parser.add_argument("--weight_sup", default=20.0, type=float)
     args = parser.parse_args()
 
     # ========================================================================
@@ -107,7 +109,6 @@ def main():
                 seed=seedi,
                 deterministic=True,
                 max_epochs=args.max_epochs,
-                device="cuda:1",
                 sslabel_key=slabel_name,
                 ss_label_ratio=args.ss_label_ratio,
             )

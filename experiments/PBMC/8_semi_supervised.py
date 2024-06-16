@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--max_epochs", default=300, type=int)
     parser.add_argument("--n_annotations", default=(100,), type=int, nargs="+")
     parser.add_argument("--annotated_batch", default=1, type=int)
+    parser.add_argument("--weight_sup", default=5, type=float)
     args = parser.parse_args()
 
     # ========================================================================
@@ -88,7 +89,8 @@ def main():
                 max_epochs=args.max_epochs,
                 device="cuda:1",
                 sslabel_key=slabel_name,
-                ss_label_ratio=0.15
+                ss_label_ratio=0.15,
+                loss_weight_sup=args.weight_sup,
             )
             if timing:
                 t1 = perf_counter()

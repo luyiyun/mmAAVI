@@ -10,6 +10,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import sklearn.metrics as M
 from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
 from plottable import ColumnDefinition, Table
 from plottable.cmap import normed_cmap
 from plottable.plots import bar
@@ -243,7 +244,7 @@ def sample_by_batch_label(
         train_size=remain_n,
         shuffle=True,
         random_state=seed,
-        stratify=label_batch_used[selected_indice],
+        stratify=label[selected_indice],
     )
     return np.r_[res, res_remain]
 
@@ -454,3 +455,28 @@ def plot_categories(ax, umap_xy, feature, palette, leg_ncols=1, title=None):
     leg.set_in_layout(True)
 
     return ax, leg
+
+
+def unintegrated_pca(
+    mdata: md.MuData, batch_name: str = "batch", K: int = 30
+) -> np.ndarray:
+    batch_arr = mdata.obs[batch_name].values
+    batch_uni = np.unique(batch_arr)
+
+    embeds = np.zeros((mdata.n_obs, K))
+    for bi in batch_uni:
+        mask = batch_arr == bi
+        mdatai = mdata[mask, :]
+        X_bi = []
+        for adatai in mdatai.mod.values():
+            if adatai.n_obs == 0:
+                continue
+            Xi = adatai.X
+            if sp.issparse(Xi):
+                Xi = Xi.todense()
+            X_bi.append(np.asarray(Xi))
+        X_bi = np.concatenate(X_bi, axis=1)
+        embedi = PCA(n_components=K).fit_transform(X_bi)
+        embeds[mask, :] = embedi
+
+    return embeds

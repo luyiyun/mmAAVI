@@ -112,7 +112,7 @@ Here, we take the PBMC dataset as an example.
 
 ## Reproduce results in paper
 
-> The content has not been organized completely yet.
+> The code of PBMC and MOP5B has been completed.
 
 1. clone the repository.
 

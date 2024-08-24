@@ -57,3 +57,6 @@ experiments/**/data/*
 
 # -- others --
 **/StabMap/
+test_midas/midas/
+test_midas/data/
+test_midas/res/

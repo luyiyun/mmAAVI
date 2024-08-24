@@ -1,0 +1,2 @@
+wget --no-check-certificate "https://docs.google.com/uc?export=download&id=12zum6CcNsPeVzbhbZPozkbAzDuYfh4GM" -O ./midas/data/wnn_demo_labels.zip
+wget --no-check-certificate "https://docs.google.com/uc?export=download&id=1l6U-WdUIqNuE5Fc_e2f6Qz8nuXyukVFo" -O ./midas/data/wnn_demo_processed.zip

@@ -391,6 +391,7 @@ class MMAAVI_RUNNER:
         df_rna["chromEnd"] = df_rna.chromEnd.fillna(0.0)
         df_rna = df_rna[["chrom", "chromStart", "chromEnd", "strand"]]
         df_rna["strand"] = df_rna["strand"].astype(np.str_)
+        # TODO: roughly remove duplicated items
         df_rna = df_rna[~df_rna.index.duplicated()]
 
         bed_rna = Bed(df_rna)

@@ -47,22 +47,17 @@ class MIDAS_RUNNER:
         ]
         remove_old = False
 
-        self._label = pd.concat(
-            [
-                pd.read_csv(
-                    f"{self._data_root}/labels/p1_0/label_seurat/l1.csv",
-                    index_col=0,
-                ),
-                pd.read_csv(
-                    f"{self._data_root}/labels/p2_0/label_seurat/l1.csv",
-                    index_col=0,
-                ),
-                pd.read_csv(
-                    f"{self._data_root}/labels/p3_0/label_seurat/l1.csv",
-                    index_col=0,
-                ),
-            ]
-        )
+        self._label_batch = []
+        for i, p1 in enumerate([1, 2, 3]):
+            dfi = pd.read_csv(
+                f"{self._data_root}/labels/p{p1}_0/label_seurat/l1.csv",
+                index_col=0,
+            )
+            dfi.index = [f"b{i}_{j}" for j in range(dfi.shape[0])]
+            dfi.columns = ["label"]
+            dfi["batch"] = f"b{i}"
+            self._label_batch.append(dfi)
+        self._label_batch = pd.concat(self._label_batch)
 
         # generate a directory, can be substituted by preprocess/split_mat.py
         GenDataFromPath(data_path, f"{self._res_root}/data", remove_old)
@@ -91,22 +86,17 @@ class MIDAS_RUNNER:
                 ),
             },
         ]
-        self._label = pd.concat(
-            [
-                pd.read_csv(
-                    f"{self._data_root}/labels/lll_ctrl/label_seurat/l1.csv",
-                    index_col=0,
-                ),
-                pd.read_csv(
-                    f"{self._data_root}/labels/lll_stim/label_seurat/l1.csv",
-                    index_col=0,
-                ),
-                pd.read_csv(
-                    f"{self._data_root}/labels/dig_ctrl/label_seurat/l1.csv",
-                    index_col=0,
-                ),
-            ]
-        )
+        self._label_batch = []
+        for i, p1 in enumerate(["lll_ctrl", "lll_stim", "dig_ctrl"]):
+            dfi = pd.read_csv(
+                f"{self._data_root}/labels/{p1}/label_seurat/l1.csv",
+                index_col=0,
+            )
+            dfi.index = [f"b{i}_{j}" for j in range(dfi.shape[0])]
+            dfi.columns = ["label"]
+            dfi["batch"] = f"b{i}"
+            self._label_batch.append(dfi)
+        self._label_batch = pd.concat(self._label_batch)
         remove_old = False
 
         # generate a directory, can be substituted by preprocess/split_mat.py
@@ -133,13 +123,8 @@ class MIDAS_RUNNER:
         c = emb["z"]["joint"][:, : self._dim_c]  # biological information
         b = emb["z"]["joint"][:, self._dim_c :]  # batch information
 
-        self._label.columns = ["label"]
-        self._label["batch"] = emb["s"]["joint"].astype("str")
-        self._label.index = self._label.apply(
-            lambda ser: f"B{ser.loc['batch']}_{ser.name}", axis=1
-        )
-        self._adata = sc.AnnData(c, obs=self._label)
-        self._adata2 = sc.AnnData(b, obs=self._label)
+        self._adata = sc.AnnData(c, obs=self._label_batch)
+        self._adata2 = sc.AnnData(b, obs=self._label_batch)
         self._adata.write_h5ad(self._latent_fn)
         self._adata2.write_h5ad(self._latent_batch_fn)
 
@@ -244,7 +229,7 @@ class MMAAVI_RUNNER:
                     df.values,
                     obs=pd.DataFrame(
                         pd.read_csv(label_path[bk], index_col=0).values,
-                        index=df.index,
+                        index=[f"{bk}_{j}" for j in range(df.shape[0])],
                         columns=["label"],
                     ),
                     var=pd.DataFrame(np.empty(df.shape[1]), index=df.columns),
@@ -345,7 +330,7 @@ class MMAAVI_RUNNER:
                     df.values,
                     obs=pd.DataFrame(
                         pd.read_csv(label_path[bk], index_col=0).values,
-                        index=df.index,
+                        index=[f"{bk}_{j}" for j in range(df.shape[0])],
                         columns=["label"],
                     ),
                     var=pd.DataFrame(np.empty(df.shape[1]), index=df.columns),
@@ -379,7 +364,8 @@ class MMAAVI_RUNNER:
         )
         df_rna["chrom"] = df_rna["chrom"].map(
             lambda x: (
-                x if x in ([str(i) for i in range(1, 23)] + ["X", "Y"])
+                x
+                if x in ([str(i) for i in range(1, 23)] + ["X", "Y"])
                 else "."
             )
         )  # only remain autosomal and sex chromosome genes
@@ -529,28 +515,28 @@ def main():
     # ========================================================================
     # wnn
     # ========================================================================
-    # midas_runner = MIDAS_RUNNER(res_root="./res/wnn/midas")
-    # midas_runner.load_wnn_data(data_root="./data/wnn/")
-    # midas_runner.run_model()
-    # midas_runner.plot()
-    # mmaavi_runner = MMAAVI_RUNNER(res_root="./res/wnn/mmaavi")
-    # mmaavi_runner.load_wnn_data(data_root="./data/wnn/")
-    # mmaavi_runner.run_model()
-    # mmaavi_runner.plot()
-    # evaluate(midas_runner, mmaavi_runner, "./res/wnn")
+    midas_runner = MIDAS_RUNNER(res_root="./res/wnn/midas")
+    midas_runner.load_wnn_data(data_root="./data/wnn/")
+    midas_runner.run_model()
+    midas_runner.plot()
+    mmaavi_runner = MMAAVI_RUNNER(res_root="./res/wnn/mmaavi")
+    mmaavi_runner.load_wnn_data(data_root="./data/wnn/")
+    mmaavi_runner.run_model()
+    mmaavi_runner.plot()
+    evaluate(midas_runner, mmaavi_runner, "./res/wnn")
 
     # ========================================================================
     # dogma
     # ========================================================================
-    midas_runner = MIDAS_RUNNER(res_root="./res/dogma/midas")
+    # midas_runner = MIDAS_RUNNER(res_root="./res/dogma/midas")
     # midas_runner.load_dogma_data(data_root="./data/dogma/")
-    # midas_runner.run_model(trained_model=True)
+    # midas_runner.run_model()
     # midas_runner.plot()
-    mmaavi_runner = MMAAVI_RUNNER(res_root="./res/dogma/mmaavi")
-    mmaavi_runner.load_dogma_data(data_root="./data/dogma/")
-    mmaavi_runner.run_model()
-    mmaavi_runner.plot()
-    evaluate(midas_runner, mmaavi_runner, "./res/dogma")
+    # mmaavi_runner = MMAAVI_RUNNER(res_root="./res/dogma/mmaavi")
+    # mmaavi_runner.load_dogma_data(data_root="./data/dogma/")
+    # mmaavi_runner.run_model()
+    # mmaavi_runner.plot()
+    # evaluate(midas_runner, mmaavi_runner, "./res/dogma")
 
 
 if __name__ == "__main__":

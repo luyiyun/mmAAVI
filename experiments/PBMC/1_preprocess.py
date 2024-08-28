@@ -224,7 +224,7 @@ def preprocess_mudata(mdata: MuData) -> MuData:
             adatai.obsm["log1p_norm"][maski, :] = log1p_norm(datai)
             # 2nd pp method: lsi for atac and pca for others
             if m == "atac":
-                embedi = lsi(datai, n_components=100, n_iter=15)
+                embedi = lsi(datai, n_components=n_embeds, n_iter=15)
             else:
                 if sp.issparse(datai):
                     datai = sp.csr_matrix(datai)

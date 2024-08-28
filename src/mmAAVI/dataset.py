@@ -72,6 +72,23 @@ class MosaicMuDataset(D.Dataset):
         self._dlabel_key = dlabel_key if dlabel_key is not None else batch_key
         self._sslabel_key = sslabel_key
 
+        self._input_ndims = {
+            k: (
+                adatai.X.shape[1]
+                if self._input_key is None
+                else adatai.obsm[self._input_key].shape[1]
+            )
+            for k, adatai in self._mdata.mod.items()
+        }
+        self._output_ndims = {
+            k: (
+                adatai.X.shape[1]
+                if self._output_key is None
+                else adatai.obsm[self._output_key].shape[1]
+            )
+            for k, adatai in self._mdata.mod.items()
+        }
+
     def __len__(self) -> int:
         return self._mdata.n_obs
 
@@ -86,8 +103,12 @@ class MosaicMuDataset(D.Dataset):
             # it is also happened when count is 0.
             # the true approach is by mudata.obsm["OMIC_NAME"][i]
             if row_ann.n_obs == 0:
-                inpts[k] = torch.zeros(row_ann.n_vars, dtype=torch.float32)
-                outputs[k] = torch.zeros(row_ann.n_vars, dtype=torch.float32)
+                inpts[k] = torch.zeros(
+                    self._input_ndims[k], dtype=torch.float32
+                )
+                outputs[k] = torch.zeros(
+                    self._output_ndims[k], dtype=torch.float32
+                )
             else:
                 inpts[k] = torch.tensor(
                     to_dense(

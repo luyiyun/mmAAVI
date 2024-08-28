@@ -1,4 +1,5 @@
 import os
+import re
 import warnings
 from typing import Sequence
 
@@ -103,7 +104,107 @@ class MIDAS_RUNNER:
         GenDataFromPath(data_path, f"{self._res_root}/data", remove_old)
         self._data = [GetDataInfo(f"{self._res_root}/data")]
 
-    def run_model(self, trained_model: bool = False):
+    def load_pbmc_data(self, data_root: str):
+        self._data_root = data_root
+        os.makedirs(self._data_root, exist_ok=True)
+
+        mdata_path = "../experiments/PBMC/res/pbmc.h5mu"
+        mdata = md.read(mdata_path)
+        merge_obs_from_all_modalities(mdata, "batch")
+        merge_obs_from_all_modalities(mdata, "coarse_cluster")
+
+        batches = np.sort(mdata.obs["batch"].unique().astype(int))
+        data_path = []
+        self._label_batch = []
+        for bi in batches:
+            mdata_bi = mdata[mdata.obs["batch"] == bi]
+            self._label_batch.append(
+                mdata_bi.obs[["batch", "coarse_cluster"]].rename(
+                    columns={"coarse_cluster": "label"}
+                )
+            )
+
+            dict_bi = {}
+            for k, adatai in mdata_bi.mod.items():
+                if adatai.shape[0] == 0:
+                    continue
+
+                # NOTE: 对于MIDAS, 组学必须限定在atac\rna\adt, 不能使用其他的名字.
+                # 对于atac,其变量名必须使用chr[.]-xxx-xxxx的格式
+                dfi = pd.DataFrame(
+                    adatai.X if k == "protein" else adatai.X.toarray(),
+                    index=adatai.obs.index,
+                    columns=adatai.var.index.map(lambda x: x.split(":")[-1]),
+                ).astype(int)
+                if k == "atac":
+                    dfi.columns = dfi.columns.str.replace("_", "-")
+
+                dfi_path = f"{data_root}/{k}_{bi}.csv"
+                dfi.to_csv(dfi_path)
+                dict_bi["adt" if k == "protein" else k] = dfi_path
+            data_path.append(dict_bi)
+
+        self._label_batch = pd.concat(self._label_batch)
+        self._label_batch["batch"] = (
+            self._label_batch["batch"].astype(int).astype(str)
+        )
+        remove_old = False
+
+        # generate a directory, can be substituted by preprocess/split_mat.py
+        GenDataFromPath(data_path, f"{self._res_root}/data", remove_old)
+        self._data = [GetDataInfo(f"{self._res_root}/data")]
+
+    def load_mop5b_data(self, data_root: str):
+        self._data_root = data_root
+        os.makedirs(self._data_root, exist_ok=True)
+
+        mdata_path = "../experiments/MOP5b/res/mop5b.h5mu"
+        mdata = md.read(mdata_path)
+        merge_obs_from_all_modalities(mdata, key="cell_type")
+        merge_obs_from_all_modalities(mdata, key="batch")
+
+        batches = np.sort(mdata.obs["batch"].unique().astype(int))
+        data_path = []
+        self._label_batch = []
+        for bi in batches:
+            mdata_bi = mdata[mdata.obs["batch"] == bi]
+            self._label_batch.append(
+                mdata_bi.obs[["batch", "cell_type"]].rename(
+                    columns={"cell_type": "label"}
+                )
+            )
+
+            dict_bi = {}
+            for k, adatai in mdata_bi.mod.items():
+                if adatai.shape[0] == 0:
+                    continue
+
+                # NOTE: 对于MIDAS, 组学必须限定在atac\rna\adt, 不能使用其他的名字.
+                # 对于atac,其变量名必须使用chr[.]-xxx-xxxx的格式
+                dfi = pd.DataFrame(
+                    adatai.X if k == "protein" else adatai.X.toarray(),
+                    index=adatai.obs.index,
+                    columns=adatai.var.index.map(lambda x: x.split(":")[-1]),
+                ).astype(int)
+                if k == "atac":
+                    dfi.columns = dfi.columns.str.replace("_", "-")
+
+                dfi_path = f"{data_root}/{k}_{bi}.csv"
+                dfi.to_csv(dfi_path)
+                dict_bi["adt" if k == "protein" else k] = dfi_path
+            data_path.append(dict_bi)
+
+        self._label_batch = pd.concat(self._label_batch)
+        self._label_batch["batch"] = (
+            self._label_batch["batch"].astype(int).astype(str)
+        )
+        remove_old = False
+
+        # generate a directory, can be substituted by preprocess/split_mat.py
+        GenDataFromPath(data_path, f"{self._res_root}/data", remove_old)
+        self._data = [GetDataInfo(f"{self._res_root}/data")]
+
+    def run_model(self, trained_model: bool = False, n_epoch: int = 500):
         self._trained_model = trained_model
 
         self._model = MIDAS(self._data)
@@ -114,7 +215,9 @@ class MIDAS_RUNNER:
             )
         else:
             self._model.init_model(dim_c=self._dim_c)
-            self._model.train(n_epoch=500, save_path=f"{self._res_root}/train")
+            self._model.train(
+                n_epoch=n_epoch, save_path=f"{self._res_root}/train"
+            )
 
         self._model.predict(
             joint_latent=True, save_dir=f"{self._res_root}/predict"
@@ -169,6 +272,10 @@ class MIDAS_RUNNER:
         label["s"] = modality_emb["s"]["joint"]
         utils.viz_mod_latent(modality_emb, label, legend=False)
         plt.savefig(f"{self._res_root}/mod_latent.png")
+
+    @property
+    def latent_fn(self):
+        return self._latent_fn
 
 
 class MMAAVI_RUNNER:
@@ -442,6 +549,14 @@ class MMAAVI_RUNNER:
                 # 1st pp method: log1p and normalization
                 adatai.obsm["log1p_norm"][maski, :] = log1p_norm(datai)
 
+    def load_mop5b_data(self):
+        mdata_path = "../experiments/MOP5b/res/mop5b.h5mu"
+        mdata = md.read(mdata_path)
+        merge_obs_from_all_modalities(mdata, key="cell_type")
+        merge_obs_from_all_modalities(mdata, key="batch")
+        mdata.obs["label"] = mdata.obs["cell_type"]
+        self._mdata = mdata
+
     def run_model(self, trained_model: bool = False):
         if trained_model:
             self._mdata = md.read(f"{self._res_root}/latent.h5mu")
@@ -470,24 +585,52 @@ class MMAAVI_RUNNER:
         )
         fig.savefig(f"{self._res_root}/z_umap.png")
 
+    @property
+    def latent_fn(self):
+        return self._latent_fn
+
 
 def evaluate(
-    midas_runner: MIDAS_RUNNER, mmaavi_runner: MMAAVI_RUNNER, res_root: str
+    midas_res_fn: str,
+    mmaavi_res_fn: str,
+    res_root: str,
+    mmaavi_res_from_previous: bool = False,
 ):
-    mdata = md.read(mmaavi_runner._latent_fn)
-    res_midas = ad.read(midas_runner._latent_fn)
+    mdata = md.read(mmaavi_res_fn)
+    if mmaavi_res_from_previous:
+        nc_best = mdata.uns["best_nc"]
+        pattern = rf"mmAAVI_nc{nc_best}_s(\d+?)_z"
+        random_seeds, embed_keys = [], []
+        for k in mdata.obsm.keys():
+            res = re.search(pattern, k)
+            if res:
+                random_seeds.append(int(res.group(1)))
+                embed_keys.append(k)
+        # create anndata
+        adata = get_adata_from_mudata(
+            mdata,
+            obs=[],  # NOTE: 不能是None，否则index将会产生变换
+            obsm=embed_keys,
+        )
+    else:
+        adata = get_adata_from_mudata(
+            mdata, obs=["batch", "label"], obsm=["mmAAVI_z"]
+        )
+        embed_keys = ["mmAAVI_z"]
 
-    mdata = get_adata_from_mudata(
-        mdata, obs=["batch", "label"], obsm=["mmAAVI_z"]
-    )
-    mdata.obsm["MIDAS"] = res_midas[mdata.obs.index].X
+    res_midas = ad.read(midas_res_fn)
+    adata.obsm["MIDAS"] = res_midas[adata.obs.index].X
+    adata.obs.loc[:, ["batch", "label"]] = res_midas.obs.loc[
+        adata.obs.index, ["batch", "label"]
+    ].values
+    embed_keys.append("MIDAS")
 
     setup_seed(1234)
     bm = Benchmarker(
-        mdata,
+        adata,
         batch_key="batch",
         label_key="label",
-        embedding_obsm_keys=["mmAAVI_z", "MIDAS"],
+        embedding_obsm_keys=embed_keys,
         n_jobs=8,
         bio_conservation_metrics=BioConservation(
             nmi_ari_cluster_labels_kmeans=False,
@@ -498,9 +641,8 @@ def evaluate(
 
     res_df = bm.get_results(min_max_scale=False, clean_names=True)
     res_df = res_df.T
-    res_df.rename(columns={"mmAAVI_z": "mmAAVI"}, inplace=True)
-    embed_keys = ["mmAAVI", "MIDAS"]
     res_df[embed_keys] = res_df[embed_keys].astype(float)
+    res_df.rename(columns={"mmAAVI_z": "mmAAVI"}, inplace=True)
     res_df.to_csv(f"{res_root}/eval_res.csv")
 
     metric_type = res_df["Metric Type"].values
@@ -515,15 +657,15 @@ def main():
     # ========================================================================
     # wnn
     # ========================================================================
-    midas_runner = MIDAS_RUNNER(res_root="./res/wnn/midas")
-    midas_runner.load_wnn_data(data_root="./data/wnn/")
-    midas_runner.run_model()
-    midas_runner.plot()
-    mmaavi_runner = MMAAVI_RUNNER(res_root="./res/wnn/mmaavi")
-    mmaavi_runner.load_wnn_data(data_root="./data/wnn/")
-    mmaavi_runner.run_model()
-    mmaavi_runner.plot()
-    evaluate(midas_runner, mmaavi_runner, "./res/wnn")
+    # midas_runner = MIDAS_RUNNER(res_root="./res/wnn/midas")
+    # midas_runner.load_wnn_data(data_root="./data/wnn/")
+    # midas_runner.run_model()
+    # midas_runner.plot()
+    # mmaavi_runner = MMAAVI_RUNNER(res_root="./res/wnn/mmaavi")
+    # mmaavi_runner.load_wnn_data(data_root="./data/wnn/")
+    # mmaavi_runner.run_model()
+    # mmaavi_runner.plot()
+    # evaluate(midas_runner.latent_fn, mmaavi_runner.latent_fn, "./res/wnn")
 
     # ========================================================================
     # dogma
@@ -536,7 +678,40 @@ def main():
     # mmaavi_runner.load_dogma_data(data_root="./data/dogma/")
     # mmaavi_runner.run_model()
     # mmaavi_runner.plot()
-    # evaluate(midas_runner, mmaavi_runner, "./res/dogma")
+    # evaluate(midas_runner.latent_fn, mmaavi_runner.latent_fn, "./res/dogma")
+
+    # ========================================================================
+    # PBMC
+    # ========================================================================
+    midas_runner = MIDAS_RUNNER(res_root="./res/pbmc/midas")
+    # midas_runner.load_pbmc_data(data_root="./data/pbmc")
+    # midas_runner.run_model()
+    # midas_runner.plot()
+    evaluate(
+        midas_runner.latent_fn,
+        "../experiments/PBMC/res/pbmc_decide_num_clusters.h5mu",
+        "./res/pbmc",
+        mmaavi_res_from_previous=True,
+    )
+
+    # ========================================================================
+    # MOP5B
+    # ========================================================================
+    midas_runner = MIDAS_RUNNER(res_root="./res/mop5b/midas")
+    # midas_runner.load_mop5b_data(data_root="./data/mop5b")
+    # midas_runner.run_model()
+    # midas_runner.plot()
+    mmaavi_runner = MMAAVI_RUNNER(res_root="./res/mop5b/mmaavi", dim_c=21)
+    # mmaavi_runner.load_mop5b_data()
+    # mmaavi_runner.run_model()
+    # mmaavi_runner.plot()
+
+    evaluate(
+        midas_runner.latent_fn,
+        mmaavi_runner.latent_fn,
+        "./res/mop5b",
+        mmaavi_res_from_previous=False,
+    )
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ def main():
     # ====== ATAC ======
     atac = ad.read_h5ad(osp.join(args.raw_data_dir, "Muto-2021-ATAC.h5ad"))
     sc.pp.highly_variable_genes(atac, flavor="cell_ranger")
+    atac = atac[:, atac.var["highly_variable"]]
     atac.obs.index = [f"atac_{i}" for i in range(atac.shape[0])]
     atac.obs["batch5"] = atac.obs["batch"]
     atac.obs["batch"] = atac.obs["batch"].map(lambda x: f"atac_{x}")
@@ -32,6 +33,7 @@ def main():
     rna.obs.index = [f"rna_{i}" for i in range(rna.shape[0])]
     rna.obs["batch5"] = rna.obs["batch"]
     rna.obs["batch"] = rna.obs["batch"].map(lambda x: f"rna_{x}")
+    rna = rna[:, rna.var["highly_variable"]]
 
     # ====== graph ======
     bed_rna = Bed(rna.var)

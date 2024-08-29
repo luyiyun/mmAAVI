@@ -7,7 +7,7 @@ import mudata as md
 import anndata as ad
 from mmAAVI import MMAAVI
 from mmAAVI.preprocess import merge_obs_from_all_modalities
-import scib_metrics as scme
+from scib import metrics as scme
 
 
 def main():

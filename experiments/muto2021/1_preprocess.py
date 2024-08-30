@@ -41,21 +41,26 @@ def main():
     atac_rna = bed_atac.window_graph(
         bed_rna.expand(upstream=2e3, downstream=0), window_size=0
     )
+
+    # ====== filter feature ======
+    # atac: filter by highly_var and graph
+    # rna: filter by highly_var
+    mask_atac = atac_rna.sum(axis=1) > 0
+    atac = atac[:, mask_atac]
+    atac_rna = atac_rna.tocsr()[mask_atac, :]
+
+    # ====== mudata ======
     net = sp.block_array(
         [
             [None, atac_rna],
             [atac_rna.T, None],
         ]
     )
-
-    # ====== mudata ======
     mdata = md.MuData({"atac": atac, "rna": rna})
     mdata.varp["net"] = sp.csr_matrix(net)  # anndata only support csr and csc
 
     # ====== preprocess ======
     # only remain the features which are in the network
-    mask = net.sum(axis=0) > 0
-    mdata = mdata[:, mask]
     # get the embedding for each data matrix
     n_embeds = 100
     for m in mdata.mod.keys():

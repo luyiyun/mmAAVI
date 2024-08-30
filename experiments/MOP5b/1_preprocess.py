@@ -148,8 +148,8 @@ def main():
 
     # filter features
     # only remain the features which are in the network
-    mask = net.sum(axis=0) > 0
-    mdata = mdata[:, mask]
+    # mask = net.sum(axis=0) > 0  # TODO:
+    # mdata = mdata[:, mask]
     # get the embedding for each data matrix
     n_embeds = 100
     for m in mdata.mod.keys():

@@ -34,8 +34,10 @@ def main():
         input_key="lsi_pca",
         net_key="net",
         balance_sample="max",
-        num_workers=4,
-        batch_key=batch_name
+        num_workers=8,
+        batch_key=batch_name,
+        batch_size=256,
+        disc_gradient_weight=50,
     )
     model.fit(mdata)
     mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)

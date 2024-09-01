@@ -1,7 +1,7 @@
 import os
 import re
 import warnings
-from typing import Sequence
+from typing import Sequence, Optional, Dict, Union
 
 import anndata as ad
 import mudata as md
@@ -20,6 +20,8 @@ from mmAAVI import MMAAVI
 import scipy.sparse as sp
 import biothings_client as bc
 from scib_metrics.benchmark import Benchmarker, BioConservation
+import seaborn as sns
+import colorcet as cc
 
 
 warnings.filterwarnings("ignore")
@@ -219,7 +221,7 @@ class MIDAS_RUNNER:
         for bi in batches:
             mdata_bi = mdata[mdata.obs["batch"] == bi]
             self._label_batch.append(
-                mdata_bi.obs[["batch", "cell_type"]].rename(
+                mdata_bi.obs[["batch", "batch5", "cell_type"]].rename(
                     columns={"cell_type": "label"}
                 )
             )
@@ -280,19 +282,33 @@ class MIDAS_RUNNER:
         self._adata.write_h5ad(self._latent_fn)
         self._adata2.write_h5ad(self._latent_batch_fn)
 
-    def plot(self):
-        if not self._trained_model:
+    def plot(self, return_plot_data: bool = False) -> Optional[pd.DataFrame]:
+        if hasattr(self, "_trained_model") and not self._trained_model:
             self._model.viz_loss()
             plt.savefig(f"{self._res_root}/loss.png")
 
         # shuffle for better visualization
         # sc.pp.subsample(adata, fraction=1)
         # sc.pp.subsample(adata2, fraction=1)
+        if not hasattr(self, "_adata"):
+            self._adata = sc.read_h5ad(self._latent_fn)
+        if not hasattr(self, "_adata2"):
+            self._adata2 = sc.read_h5ad(self._latent_batch_fn)
 
         sc.pp.neighbors(self._adata)
         sc.tl.umap(self._adata)
         sc.pp.neighbors(self._adata2)
         sc.tl.umap(self._adata2)
+
+        if return_plot_data:
+            df1 = pd.DataFrame(
+                self._adata.obsm["X_umap"], columns=["UMAP1", "UMAP2"]
+            )
+            df1["batch"] = self._adata.obs["batch"].values
+            df1["label"] = self._adata.obs["label"].values
+            if "batch5" in self._adata.obs.columns:
+                df1["batch5"] = self._adata.obs["batch5"].values
+            return df1
 
         fig = sc.pl.umap(
             self._adata,
@@ -622,9 +638,21 @@ class MMAAVI_RUNNER:
             #   mdata.obsm["mmAAVI_c"].argmax(axis=1)
             self._mdata.write(self._latent_fn)
 
-    def plot(self):
+    def plot(self, return_plot_data: bool = False) -> Optional[pd.DataFrame]:
+        if not hasattr(self, "_mdata"):
+            self._mdata = md.read(f"{self._res_root}/latent.h5mu")
+
         sc.pp.neighbors(self._mdata, use_rep="mmAAVI_z")
         sc.tl.umap(self._mdata, min_dist=0.2)
+
+        if return_plot_data:
+            df1 = pd.DataFrame(
+                self._mdata.obsm["X_umap"], columns=["UMAP1", "UMAP2"]
+            )
+            df1["batch"] = self._mdata.obs["batch"].values
+            df1["label"] = self._mdata.obs["label"].values
+            return df1
+
         fig = sc.pl.umap(
             self._mdata,
             color=["batch", "label"],
@@ -662,9 +690,7 @@ def evaluate(
             obsm=embed_keys,
         )
     else:
-        adata = get_adata_from_mudata(
-            mdata, obs=[], obsm=["mmAAVI_z"]
-        )
+        adata = get_adata_from_mudata(mdata, obs=[], obsm=["mmAAVI_z"])
         embed_keys = ["mmAAVI_z"]
 
     res_midas = ad.read(midas_res_fn)
@@ -700,6 +726,112 @@ def evaluate(
     plot_df = temp_df.groupby("method").mean().T
     plot_df["Metric Type"] = metric_type
     plot_results_table(plot_df, save_name=f"{res_root}/eval_table.png")
+
+
+def plot_umap(
+    runner_dict: Dict[str, Union[MIDAS_RUNNER, MMAAVI_RUNNER]],
+    save_fn: str,
+):
+    nrows = len(runner_dict)
+    ncols = 2
+
+    with warnings.catch_warnings(record=True):
+        fig, axs = plt.subplots(
+            ncols=ncols,
+            nrows=nrows,
+            figsize=(ncols * 4 + 4, nrows * 3.5),
+            squeeze=False,
+        )
+        for i, (key, runner) in enumerate(runner_dict.items()):
+
+            df = runner.plot(return_plot_data=True)
+            if key == "Nephron":
+                df["batch"] = df["batch"].map(lambda x: x.split("_")[-1])
+            df["batch"] = df["batch"].replace(
+                {k: f"batch{i+1}" for i, k in enumerate(df["batch"].unique())}
+            )
+            markersize = 15000 / df.shape[0]
+            markerscale = 10.0 / markersize
+
+            batch_uni = df["batch"].unique()
+            label_uni = df["label"].unique()
+
+            batch_colors = sns.color_palette()
+            label_colors = (
+                sns.color_palette()
+                if len(label_uni) <= 10
+                else sns.color_palette(cc.glasbey, n_colors=len(label_uni))
+            )
+
+            ax = axs[i, 0]
+            for j, batch_i in enumerate(batch_uni):
+                xyi = df[df["batch"] == batch_i]
+                ax.plot(
+                    xyi["UMAP1"],
+                    xyi["UMAP2"],
+                    ".",
+                    markersize=markersize,
+                    color=batch_colors[j],
+                    label=batch_i,
+                )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlabel("")
+            ax.set_ylabel(key)
+
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(
+                handles,
+                labels,
+                # loc="center right",
+                loc='upper left',
+                markerscale=markerscale,
+                frameon=False,
+                fancybox=False,
+                ncols=1,
+                # bbox_to_anchor=(0.4, -0.2, 0.2, 0.2),
+                bbox_to_anchor=(1.05, 1),
+                columnspacing=0.2,
+                handletextpad=0.1,
+            )
+
+            ax = axs[i, 1]
+            for j, ct_i in enumerate(label_uni):
+                xyi = df[df["label"] == ct_i]
+                ax.plot(
+                    xyi["UMAP1"],
+                    xyi["UMAP2"],
+                    ".",
+                    markersize=markersize,
+                    color=label_colors[j],
+                    label=ct_i,
+                )
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            handles, labels = ax.get_legend_handles_labels()
+            ax.legend(
+                handles,
+                labels,
+                # loc="center right",
+                loc="upper left",
+                markerscale=markerscale,
+                frameon=False,
+                fancybox=False,
+                ncols=(len(label_uni) + 9) // 10,
+                # bbox_to_anchor=(0.4, -0.2, 0.1, 0.2),
+                bbox_to_anchor=(1.05, 1),
+                columnspacing=0.2,
+                handletextpad=0.1,
+            )
+
+        axs[0, 0].set_title("Batch")
+        axs[0, 1].set_title("Cell Type")
+
+        fig.tight_layout()
+
+    fig.savefig(save_fn)
 
 
 def main():
@@ -765,16 +897,31 @@ def main():
     # ========================================================================
     # muto2021
     # ========================================================================
-    midas_runner = MIDAS_RUNNER(res_root="./res/muto2021/midas")
+    # midas_runner = MIDAS_RUNNER(res_root="./res/muto2021/midas")
     # midas_runner.load_muto2021_data(data_root="./data/muto2021")
     # midas_runner.run_model()
     # midas_runner.plot()
 
-    evaluate(
-        midas_runner.latent_fn,
-        "../experiments/muto2021/res/muto2021_fit_once.h5mu",
-        "./res/muto2021",
-        choose_best_nc=False,
+    # evaluate(
+    #     midas_runner.latent_fn,
+    #     "../experiments/muto2021/res/muto2021_fit_once.h5mu",
+    #     "./res/muto2021",
+    #     choose_best_nc=False,
+    # )
+
+    # ========================================================================
+    # Plot
+    # ========================================================================
+    midas_runner_pbmc = MIDAS_RUNNER(res_root="./res/pbmc/midas")
+    midas_runner_mop5b = MIDAS_RUNNER(res_root="./res/mop5b/midas")
+    midas_runner_muto2021 = MIDAS_RUNNER(res_root="./res/muto2021/midas")
+    plot_umap(
+        {
+            "PBMC": midas_runner_pbmc,
+            "MOP5B": midas_runner_mop5b,
+            "Nephron": midas_runner_muto2021,
+        },
+        save_fn="./res/umap_pbmc_mop5b_muto2021.png",
     )
 
 

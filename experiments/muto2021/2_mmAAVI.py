@@ -38,6 +38,7 @@ def main():
         batch_key=batch_name,
         batch_size=256,
         disc_gradient_weight=50,
+        drop_self_loop=False,
     )
     model.fit(mdata)
     mdata.obs["mmAAVI_c_label"] = mdata.obsm["mmAAVI_c"].argmax(axis=1)

@@ -108,7 +108,7 @@ class MMAAVI:
         pin_memory: bool = True,
         net_key: Optional[str] = None,
         graph_batch_size: Union[float, int] = 10000,
-        drop_self_loop: bool = True,
+        drop_self_loop: bool = False,
         num_negative_samples: int = 10,
         max_epochs: int = 300,
         device: str = "cuda:0",

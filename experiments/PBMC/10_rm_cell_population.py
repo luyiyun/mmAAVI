@@ -30,6 +30,7 @@ def main():
         "--remove_cell_type",
         default="Myeloid",
         choices=("Tcell", "NK", "Bcell", "Myeloid"),
+        nargs="+",
     )
     parser.add_argument("--num_cluster", default=8, type=int)
     parser.add_argument("--seeds", default=(0,), type=int, nargs="+")
@@ -72,16 +73,19 @@ def main():
         # set dataset with different overlapping portion
         rt_ind = ~(
             mdata.obs[batch_name].isin([int(i) for i in rm_batches.split(",")])
-            & (mdata.obs[label_name] == args.remove_cell_type)
+            & (mdata.obs[label_name].isin(args.remove_cell_type))
         )
         mdata_r = mdata[rt_ind].copy()
         print(mdata_r)
         for seedi in args.seeds:
             print(
-                f"removed cell tyep is {args.remove_cell_type}, "
+                f"removed cell tyep is {','.join(args.remove_cell_type)}, "
                 f"removed batches is {rm_batches}, rand_seed is {seedi}"
             )
-            save_name_i = f"rm{args.remove_cell_type}_rm{rm_batches}_{seedi}"
+            save_name_i = (
+                f"rm{','.join(args.remove_cell_type)}_"
+                f"rm{rm_batches}_{seedi}"
+            )
 
             setup_seed(seedi)
             model = MMAAVI(

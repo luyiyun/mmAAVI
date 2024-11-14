@@ -114,6 +114,12 @@ Here, we take the PBMC dataset as an example.
 
 > The code of PBMC and MOP5B has been completed.
 
+1. create a new conda environment.
+
+    ```bash
+    conda create -n mmaavi python=3.10 -y
+    ```
+
 1. clone the repository.
 
     ```bash
@@ -123,8 +129,8 @@ Here, we take the PBMC dataset as an example.
 2. Building the enviroment.
 
     ```bash
-    cd ./mmAAVI/experiments
-    pip install -r requirements.txt
+    cd ./mmAAVI/
+    pip install ".[develop]"
     ```
 
 3. Run the scipts in `experiments` to download and analysis the benchmark datasets.

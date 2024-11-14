@@ -41,7 +41,7 @@ develop = [
     "colorcet",
     "scib",
     "scmomat",
-    # "git+https://github.com/Teichlab/MultiMAP.git",
+    # "git+https://github.com/Teichlab/MultiMAP.git",  # TODO: not working yet
 ]
 
 [tool.setuptools.packages]
